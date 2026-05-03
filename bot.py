@@ -52,6 +52,37 @@ def حساب_xp_اللفل(xp):
 def حساب_xp_للفل_التالي(lvl):
     return 50 * (lvl ** 2) + 50 * lvl
 
+# ===== دالة تحديث رول اللفل =====
+async def تحديث_رول_اللفل(member, lvl_جديد):
+    # 1. شيل كل رولات اللفل القديمة
+    رولات_للحذف = []
+    for lvl, role_data in رولات_اللفل.items():
+        role_name = role_data[0]
+        role = discord.utils.get(member.guild.roles, name=role_name)
+        if role and role in member.roles:
+            رولات_للحذف.append(role)
+
+    if رولات_للحذف:
+        await member.remove_roles(*رولات_للحذف, reason="تحديث رول اللفل")
+
+    # 2. شوف أعلى رول يستحقه العضو
+    رول_مناسب = None
+    اعلى_لفل = 0
+    for lvl, role_data in رولات_اللفل.items():
+        if lvl_جديد >= lvl and lvl > اعلى_لفل:
+            اعلى_لفل = lvl
+            رول_مناسب = role_data
+
+    # 3. اعطيه الرول الجديد
+    if رول_مناسب:
+        role_name, role_color = رول_مناسب
+        role = discord.utils.get(member.guild.roles, name=role_name)
+        if not role:
+            role = await member.guild.create_role(name=role_name, color=role_color, reason="رول لفل تلقائي")
+        await member.add_roles(role, reason=f"وصل لفل {lvl_جديد}")
+        return role
+    return None
+
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
@@ -109,7 +140,7 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    # ===== نظام XP =====
+    # ===== نظام XP - كل رسالة = 1 XP =====
     user_id = str(message.author.id)
     guild_id = str(message.guild.id)
 
@@ -129,7 +160,7 @@ async def on_message(message):
         xp_قديم = اللفلات[guild_id][user_id]["xp"]
         lvl_قديم = اللفلات[guild_id][user_id]["level"]
 
-        xp_جديد = xp_قديم + random.randint(5, 15)
+        xp_جديد = xp_قديم + 1 # كل رسالة = 1 XP
         lvl_جديد = حساب_xp_اللفل(xp_جديد)
 
         اللفلات[guild_id][user_id]["xp"] = xp_جديد
@@ -146,13 +177,10 @@ async def on_message(message):
                 )
                 await channel.send(embed=embed)
 
-            if lvl_جديد in رولات_اللفل:
-                role_name, role_color = رولات_اللفل[lvl_جديد]
-                role = discord.utils.get(message.guild.roles, name=role_name)
-                if not role:
-                    role = await message.guild.create_role(name=role_name, color=role_color, reason="رول لفل تلقائي")
-                await message.author.add_roles(role)
-                await message.channel.send(f"مبروك {message.author.mention} حصلت على رول {role.mention} 🌟")
+            # تحديث الرول
+            new_role = await تحديث_رول_اللفل(message.author, lvl_جديد)
+            if new_role:
+                await message.channel.send(f"مبروك {message.author.mention} حصلت على رول {new_role.mention} 🌟")
 
     # فلتر السب
     for كلمة in الكلمات_المسيئة:
@@ -300,27 +328,24 @@ async def عط(ctx, member: discord.Member, amount: int):
     اللفلات[guild_id][user_id]["level"] = lvl_جديد
     حفظ_اللفلات(اللفلات)
 
-    if lvl_جديد > lvl_قديم:
-        channel = discord.utils.get(ctx.guild.channels, name=اسم_روم_اللفل)
-        if channel:
-            embed = discord.Embed(
-                title="🎉 لفل اب!",
-                description=f"{member.mention} وصل لفل **{lvl_جديد}**",
-                color=0xf1c40f
-            )
-            await channel.send(embed=embed)
+    # تحديث الرول لو تغير اللفل
+    if lvl_جديد!= lvl_قديم:
+        if lvl_جديد > lvl_قديم:
+            channel = discord.utils.get(ctx.guild.channels, name=اسم_روم_اللفل)
+            if channel:
+                embed = discord.Embed(
+                    title="🎉 لفل اب!",
+                    description=f"{member.mention} وصل لفل **{lvl_جديد}**",
+                    color=0xf1c40f
+                )
+                await channel.send(embed=embed)
 
-        if lvl_جديد in رولات_اللفل:
-            role_name, role_color = رولات_اللفل[lvl_جديد]
-            role = discord.utils.get(ctx.guild.roles, name=role_name)
-            if not role:
-                role = await ctx.guild.create_role(name=role_name, color=role_color, reason="رول لفل تلقائي")
-            await member.add_roles(role)
-            await ctx.channel.send(f"مبروك {member.mention} حصلت على رول {role.mention} 🌟")
+        new_role = await تحديث_رول_اللفل(member, lvl_جديد)
+        if new_role and lvl_جديد > lvl_قديم:
+            await ctx.channel.send(f"مبروك {member.mention} حصلت على رول {new_role.mention} 🌟")
 
     await ctx.send(f"✅ تم إعطاء {member.mention} **{amount} XP**\nلفله الحين: `{lvl_جديد}` | XP: `{xp_جديد}`")
 
-# ===== الأمر الجديد: خصم XP =====
 @bot.command(name="خصم")
 @commands.has_permissions(administrator=True)
 async def خصم(ctx, member: discord.Member, amount: int):
@@ -348,14 +373,9 @@ async def خصم(ctx, member: discord.Member, amount: int):
     اللفلات[guild_id][user_id]["level"] = lvl_جديد
     حفظ_اللفلات(اللفلات)
 
-    # لو نزل لفل، شيل رولات اللفل العالية
-    if lvl_جديد < lvl_قديم:
-        for lvl_role, role_data in رولات_اللفل.items():
-            if lvl_role > lvl_جديد:
-                role_name = role_data[0]
-                role = discord.utils.get(ctx.guild.roles, name=role_name)
-                if role and role in member.roles:
-                    await member.remove_roles(role)
+    # تحديث الرول لو نزل اللفل
+    if lvl_جديد!= lvl_قديم:
+        await تحديث_رول_اللفل(member, lvl_جديد)
 
     await ctx.send(f"✅ تم خصم **{amount} XP** من {member.mention}\nلفله الحين: `{lvl_جديد}` | XP: `{xp_جديد}`")
 
@@ -480,7 +500,7 @@ async def مساعدة(ctx):
     embed = discord.Embed(title="أوامر البوت", description="البريفكس: `!`", color=0x9b59b6)
     embed.add_field(name="🎯 عامة", value="`هلا` `بنق` `سيرفر` `يوزر` `تحذيراتي` `رولات` `لفل` `توب`", inline=False)
     embed.add_field(name="⚙️ إدارة", value="`مسح` `ميوت` `فك` `طرد` `باند` `تحذير` `مسح_تحذيرات` `عط` `خصم`", inline=False)
-    embed.add_field(name="👑 رولات", value="`سوي_رول` `رول` `شيل_رول`", inline=False)
+    embed.add_field(name="👑 رولات", value="`سوي_رول` `شيل_رول`", inline=False)
     embed.add_field(name="🛡️ تلقائي", value="رول الأعضاء الجدد + نظام XP + ترحيب + وداع + حذف السب + ميوت بعد 3 تحذيرات + لوق + ردود", inline=False)
     await ctx.send(embed=embed)
 
