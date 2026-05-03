@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 TOKEN = os.getenv("TOKEN")
 اسم_روم_الترحيب = "شات-العام"
 اسم_روم_اللوق = "اللوق"
+اسم_روم_الوداع = "شات-العام"
 
 الكلمات_المسيئة = ["سب1", "سب2", "كلمة_ممنوعة", "يا حيوان", "ياحيوان", "يا كلب", "ياكلب", "يامريض", "كس امك", "كسامك", "كل زق", "كلزق"]
 
@@ -35,19 +36,40 @@ async def on_member_join(member):
         )
         embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
         embed.add_field(name="أنت العضو رقم", value=f'`{member.guild.member_count}`', inline=True)
+        embed.set_footer(text="لا تنسى تقرأ القوانين")
         await channel.send(embed=embed)
+
+@bot.event
+async def on_member_remove(member):
+    channel = discord.utils.get(member.guild.channels, name=اسم_روم_الوداع)
+    if channel:
+        embed = discord.Embed(
+            title="عضو غادرنا 💔",
+            description=f'**{member.name}** طلع من السيرفر\nالله يستر عليه وين ما راح',
+            color=0xe74c3c
+        )
+        embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
+        embed.add_field(name="عدد الأعضاء الآن", value=f'`{member.guild.member_count}`', inline=True)
+        embed.set_footer(text=f"ID: {member.id}")
+        await channel.send(embed=embed)
+    
+    روم_اللوق = discord.utils.get(member.guild.channels, name=اسم_روم_اللوق)
+    if روم_اللوق:
+        embed = discord.Embed(title="سجل مغادرة 📤", color=0x95a5a6, timestamp=datetime.utcnow())
+        embed.add_field(name="العضو", value=f"{member.name}#{member.discriminator}", inline=True)
+        embed.add_field(name="الأيدي", value=f"`{member.id}`", inline=True)
+        embed.add_field(name="دخل السيرفر", value=member.joined_at.strftime("%Y-%m-%d") if member.joined_at else "غير معروف", inline=False)
+        await روم_اللوق.send(embed=embed)
 
 @bot.event
 async def on_message(message):
     if message.author.bot:
         return
 
-    # 1. فلتر السب + نظام التحذيرات التلقائي
     for كلمة in الكلمات_المسيئة:
         if كلمة in message.content.lower():
             await message.delete()
             
-            # نظام 3 تحذيرات = ميوت ساعة
             user_id = message.author.id
             if user_id not in التحذيرات:
                 التحذيرات[user_id] = 0
@@ -67,7 +89,6 @@ async def on_message(message):
             else:
                 await message.channel.send(f"{message.author.mention} تحذير {التحذيرات[user_id]}/3 لا تسب 🚫", delete_after=5)
 
-            # لوق
             روم_اللوق = discord.utils.get(message.guild.channels, name=اسم_روم_اللوق)
             if روم_اللوق:
                 embed = discord.Embed(title="تم حذف رسالة سيئة 🚫", color=0xff0000, timestamp=message.created_at)
@@ -78,7 +99,6 @@ async def on_message(message):
                 await روم_اللوق.send(embed=embed)
             return
 
-    # 2. الردود التلقائية
     msg = message.content.lower()
     if msg == "السلام عليكم":
         await message.channel.send(f"وعليكم السلام ورحمة الله وبركاته {message.author.mention}")
@@ -89,7 +109,6 @@ async def on_message(message):
 
     await bot.process_commands(message)
 
-# ===== 1. أوامر عامة =====
 @bot.command()
 async def هلا(ctx): await ctx.send(f"هلا والله {ctx.author.mention} 👋")
 
@@ -114,7 +133,6 @@ async def يوزر(ctx, member: discord.Member = None):
     embed.add_field(name="تحذيراته", value=f"`{التحذيرات.get(member.id, 0)}`", inline=True)
     await ctx.send(embed=embed)
 
-# ===== 2. أوامر الإدارة =====
 @bot.command()
 @commands.has_permissions(manage_messages=True)
 async def مسح(ctx, عدد: int):
@@ -153,7 +171,6 @@ async def باند(ctx, member: discord.Member, *, السبب="مافي سبب")
     await member.ban(reason=السبب)
     await ctx.send(f"تم تبنيد {member.mention} | السبب: {السبب} 🔨")
 
-# ===== 3. نظام التحذيرات اليدوي =====
 @bot.command()
 @commands.has_permissions(kick_members=True)
 async def تحذير(ctx, member: discord.Member, *, السبب="مافي سبب"):
@@ -172,13 +189,12 @@ async def مسح_تحذيرات(ctx, member: discord.Member):
     التحذيرات[member.id] = 0
     await ctx.send(f"تم مسح تحذيرات {member.mention} ✅")
 
-# ===== 4. أمر المساعدة =====
 @bot.command()
 async def مساعدة(ctx):
     embed = discord.Embed(title="أوامر البوت", description="البريفكس: `!`", color=0x9b59b6)
     embed.add_field(name="🎯 عامة", value="`هلا` `بنق` `سيرفر` `يوزر` `تحذيراتي`", inline=False)
     embed.add_field(name="⚙️ إدارة", value="`مسح` `ميوت` `فك` `طرد` `باند` `تحذير` `مسح_تحذيرات`", inline=False)
-    embed.add_field(name="🛡️ تلقائي", value="حذف السب + ميوت بعد 3 تحذيرات + لوق + ردود", inline=False)
+    embed.add_field(name="🛡️ تلقائي", value="ترحيب + وداع + حذف السب + ميوت بعد 3 تحذيرات + لوق + ردود", inline=False)
     await ctx.send(embed=embed)
 
 bot.run(TOKEN)
