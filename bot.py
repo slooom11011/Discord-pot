@@ -50,7 +50,7 @@ async def on_message(message):
             await message.channel.send(f"{message.author.mention} لا تستخدم كلمات سيئة 🚫", delete_after=5)
             
             # يرسل تقرير في روم اللوق
-            روم_اللوق = bot.get_channel(123456789012345678)  # ← حط اي دي روم اللوق هنا
+            روم_اللوق = bot.get_channel(1500455892032946196)  # ← حط اي دي روم اللوق هنا
             if روم_اللوق:
                 embed = discord.Embed(
                     title="تم حذف رسالة سيئة 🚫",
