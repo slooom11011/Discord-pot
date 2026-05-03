@@ -109,6 +109,7 @@ async def on_message(message):
 
     await bot.process_commands(message)
 
+# ===== 1. أوامر عامة =====
 @bot.command()
 async def هلا(ctx): await ctx.send(f"هلا والله {ctx.author.mention} 👋")
 
@@ -131,8 +132,11 @@ async def يوزر(ctx, member: discord.Member = None):
     embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
     embed.add_field(name="دخل السيرفر", value=member.joined_at.strftime("%Y-%m-%d"), inline=True)
     embed.add_field(name="تحذيراته", value=f"`{التحذيرات.get(member.id, 0)}`", inline=True)
+    roles = [role.mention for role in member.roles if role.name != "@everyone"]
+    embed.add_field(name="الرولات", value=" ".join(roles) if roles else "لا يوجد", inline=False)
     await ctx.send(embed=embed)
 
+# ===== 2. أوامر الإدارة =====
 @bot.command()
 @commands.has_permissions(manage_messages=True)
 async def مسح(ctx, عدد: int):
@@ -171,6 +175,7 @@ async def باند(ctx, member: discord.Member, *, السبب="مافي سبب")
     await member.ban(reason=السبب)
     await ctx.send(f"تم تبنيد {member.mention} | السبب: {السبب} 🔨")
 
+# ===== 3. نظام التحذيرات اليدوي =====
 @bot.command()
 @commands.has_permissions(kick_members=True)
 async def تحذير(ctx, member: discord.Member, *, السبب="مافي سبب"):
@@ -189,11 +194,61 @@ async def مسح_تحذيرات(ctx, member: discord.Member):
     التحذيرات[member.id] = 0
     await ctx.send(f"تم مسح تحذيرات {member.mention} ✅")
 
+# ===== 4. أوامر الرولات الجديدة =====
+@bot.command(name="سوي_رول", description="يسوي رول جديد | مثال: !سوي_رول مشرف ازرق")
+@commands.has_permissions(administrator=True)
+async def سوي_رول(ctx, اسم: str, لون: str = "ابيض"):
+    الوان = {
+        "احمر": 0xff0000, "اخضر": 0x00ff00, "ازرق": 0x0000ff,
+        "اصفر": 0xffff00, "بنفسجي": 0x9b59b6, "برتقالي": 0xe67e22,
+        "وردي": 0xff69b4, "ابيض": 0xffffff, "اسود": 0x000000, "رمادي": 0x95a5a6
+    }
+    
+    لون_الرول = الوان.get(لون, 0x99aab5)
+    رول = await ctx.guild.create_role(name=اسم, color=لون_الرول)
+    await ctx.send(f"تم إنشاء رول {رول.mention} باللون {لون} ✅")
+
+@bot.command(name="رول", description="يعطي رول لعضو | مثال: !رول @عضو مشرف")
+@commands.has_permissions(manage_roles=True)
+async def رول(ctx, member: discord.Member, *, اسم_الرول):
+    role = discord.utils.get(ctx.guild.roles, name=اسم_الرول)
+    if not role:
+        await ctx.send("❌ الرول مو موجود. سوه بالأمر `!سوي_رول`")
+        return
+    if role in member.roles:
+        await ctx.send(f"❌ {member.mention} عنده الرول أصلاً")
+        return
+    await member.add_roles(role)
+    await ctx.send(f"تم إعطاء {member.mention} رول {role.mention} ✅")
+
+@bot.command(name="شيل_رول", description="يشيل رول من عضو | مثال: !شيل_رول @عضو مشرف")
+@commands.has_permissions(manage_roles=True)
+async def شيل_رول(ctx, member: discord.Member, *, اسم_الرول):
+    role = discord.utils.get(ctx.guild.roles, name=اسم_الرول)
+    if not role:
+        await ctx.send("❌ الرول مو موجود")
+        return
+    if role not in member.roles:
+        await ctx.send(f"❌ {member.mention} ما عنده الرول أصلاً")
+        return
+    await member.remove_roles(role)
+    await ctx.send(f"تم إزالة رول {role.mention} من {member.mention} ✅")
+
+@bot.command(name="رولات", description="يعرض كل الرولات في السيرفر")
+async def رولات(ctx):
+    roles = [role.mention for role in ctx.guild.roles if role.name != "@everyone"]
+    embed = discord.Embed(title=f"رولات {ctx.guild.name}", color=0x3498db)
+    embed.description = "\n".join(roles) if roles else "مافي رولات"
+    embed.set_footer(text=f"العدد: {len(roles)}")
+    await ctx.send(embed=embed)
+
+# ===== 5. أمر المساعدة =====
 @bot.command()
 async def مساعدة(ctx):
     embed = discord.Embed(title="أوامر البوت", description="البريفكس: `!`", color=0x9b59b6)
-    embed.add_field(name="🎯 عامة", value="`هلا` `بنق` `سيرفر` `يوزر` `تحذيراتي`", inline=False)
+    embed.add_field(name="🎯 عامة", value="`هلا` `بنق` `سيرفر` `يوزر` `تحذيراتي` `رولات`", inline=False)
     embed.add_field(name="⚙️ إدارة", value="`مسح` `ميوت` `فك` `طرد` `باند` `تحذير` `مسح_تحذيرات`", inline=False)
+    embed.add_field(name="👑 رولات", value="`سوي_رول` `رول` `شيل_رول`", inline=False)
     embed.add_field(name="🛡️ تلقائي", value="ترحيب + وداع + حذف السب + ميوت بعد 3 تحذيرات + لوق + ردود", inline=False)
     await ctx.send(embed=embed)
 
