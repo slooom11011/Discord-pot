@@ -6,7 +6,7 @@ import json
 import os
 
 TOKEN = os.getenv("TOKEN")  # ياخذ التوكن من Railway
-اسم_روم_الترحيب = "الترحيب"
+اسم_روم_الترحيب = "شات-عام"
 اسم_روم_اللوق = "اللوق"
 ملف_التذكيرات = "reminders.json"
 
