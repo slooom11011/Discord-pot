@@ -50,37 +50,4 @@ async def on_message(message):
                 )
                 embed.add_field(name="العضو", value=f"{message.author.mention}", inline=True)
                 embed.add_field(name="الروم", value=message.channel.mention, inline=True)
-                embed.add_field(name="الكلمة", value=f"||{كلمة}||", inline=False)
-                embed.add_field(name="الرسالة كاملة", value=f"```{message.content}```", inline=False)
-                embed.set_footer(text=f"ID: {message.author.id}")
-                await روم_اللوق.send(embed=embed)
-            return
-
-    msg = message.content.lower()
-    if msg == "السلام عليكم":
-        await message.channel.send(f" وعليكم السلام ورحمة الله وبركاته {message.author.mention}")
-    elif msg == "صباح الخير":
-        await message.channel.send(f"صباح النور {message.author.mention} ☀️")
-    elif msg == "صباح النور":
-        await message.channel.send(f"صباح الورد {message.author.mention} 🌹")
-    elif msg == "صباح الورد":
-        await message.channel.send(f"صباح العسل {message.author.mention} 🍯")
-    elif msg == "مساء الخير":
-        await message.channel.send(f"مساء النور {message.author.mention} 🌙")
-    elif msg == "مساء النور":
-        await message.channel.send(f"مساء الورد {message.author.mention} 🌸")
-    elif msg == "مساء الورد":
-        await message.channel.send(f"مساء العسل {message.author.mention} 🍯")
-
-    await bot.process_commands(message)
-
-@bot.command()
-async def هلا(ctx):
-    await ctx.send(f"هلا والله {ctx.author.mention} 👋")
-
-@bot.event
-async def on_ready():
-    print(f'تم تسجيل الدخول باسم {bot.user}')
-    print('البوت جاهز ✅')
-
-bot.run(TOKEN)
+                embed
