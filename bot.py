@@ -1,6 +1,8 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import os
+import asyncio
+from datetime import datetime, timedelta
 
 TOKEN = os.getenv("TOKEN")
 اسم_روم_الترحيب = "شات-عام"
@@ -8,11 +10,19 @@ TOKEN = os.getenv("TOKEN")
 
 الكلمات_المسيئة = ["سب1", "سب2", "كلمة_ممنوعة", "يا حيوان", "ياحيوان", "يا كلب", "ياكلب", "يامريض", "كس امك", "كسامك", "كل زق", "كلزق"]
 
+# نظام التحذيرات
+التحذيرات = {}
+
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
+
+@bot.event
+async def on_ready():
+    print(f'تم تسجيل الدخول باسم {bot.user}')
+    await bot.change_presence(activity=discord.Game(name="!مساعدة | فلترة 24/7"))
 
 @bot.event
 async def on_member_join(member):
@@ -25,7 +35,6 @@ async def on_member_join(member):
         )
         embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
         embed.add_field(name="أنت العضو رقم", value=f'`{member.guild.member_count}`', inline=True)
-        embed.set_footer(text="لا تنسى تقرأ القوانين")
         await channel.send(embed=embed)
 
 @bot.event
@@ -33,79 +42,143 @@ async def on_message(message):
     if message.author.bot:
         return
 
+    # 1. فلتر السب + نظام التحذيرات التلقائي
     for كلمة in الكلمات_المسيئة:
         if كلمة in message.content.lower():
             await message.delete()
-            try:
-                await message.channel.send(f"{message.author.mention} لا تستخدم كلمات سيئة 🚫", delete_after=5)
-            except:
-                pass
             
+            # نظام 3 تحذيرات = ميوت ساعة
+            user_id = message.author.id
+            if user_id not in التحذيرات:
+                التحذيرات[user_id] = 0
+            التحذيرات[user_id] += 1
+            
+            if التحذيرات[user_id] >= 3:
+                role = discord.utils.get(message.guild.roles, name="Muted")
+                if not role:
+                    role = await message.guild.create_role(name="Muted")
+                    for ch in message.guild.channels:
+                        await ch.set_permissions(role, send_messages=False)
+                await message.author.add_roles(role)
+                await message.channel.send(f"{message.author.mention} اخذت ميوت ساعة بسبب السب المتكرر 🔇")
+                التحذيرات[user_id] = 0
+                await asyncio.sleep(3600)
+                await message.author.remove_roles(role)
+            else:
+                await message.channel.send(f"{message.author.mention} تحذير {التحذيرات[user_id]}/3 لا تسب 🚫", delete_after=5)
+
+            # لوق
             روم_اللوق = discord.utils.get(message.guild.channels, name=اسم_روم_اللوق)
             if روم_اللوق:
-                embed = discord.Embed(
-                    title="تم حذف رسالة سيئة 🚫",
-                    color=0xff0000,
-                    timestamp=message.created_at
-                )
+                embed = discord.Embed(title="تم حذف رسالة سيئة 🚫", color=0xff0000, timestamp=message.created_at)
                 embed.add_field(name="العضو", value=f"{message.author.mention}", inline=True)
-                embed.add_field(name="الروم", value=message.channel.mention, inline=True)
+                embed.add_field(name="تحذيراته", value=f"{التحذيرات[user_id]}/3", inline=True)
                 embed.add_field(name="الكلمة", value=f"||{كلمة}||", inline=False)
-                embed.add_field(name="الرسالة كاملة", value=f"```{message.content}```", inline=False)
-                embed.set_footer(text=f"ID: {message.author.id}")
+                embed.add_field(name="الرسالة", value=f"```{message.content}```", inline=False)
                 await روم_اللوق.send(embed=embed)
             return
 
+    # 2. الردود التلقائية
     msg = message.content.lower()
     if msg == "السلام عليكم":
         await message.channel.send(f"وعليكم السلام ورحمة الله وبركاته {message.author.mention}")
     elif msg == "صباح الخير":
         await message.channel.send(f"صباح النور {message.author.mention} ☀️")
-    elif msg == "صباح النور":
-        await message.channel.send(f"صباح الورد {message.author.mention} 🌹")
-    elif msg == "صباح الورد":
-        await message.channel.send(f"صباح العسل {message.author.mention} 🍯")
     elif msg == "مساء الخير":
         await message.channel.send(f"مساء النور {message.author.mention} 🌙")
-    elif msg == "مساء النور":
-        await message.channel.send(f"مساء الورد {message.author.mention} 🌸")
-    elif msg == "مساء الورد":
-        await message.channel.send(f"مساء العسل {message.author.mention} 🍯")
 
     await bot.process_commands(message)
 
-# ===== الأوامر =====
+# ===== 1. أوامر عامة =====
 @bot.command()
-async def هلا(ctx):
-    await ctx.send(f"هلا والله {ctx.author.mention} 👋")
+async def هلا(ctx): await ctx.send(f"هلا والله {ctx.author.mention} 👋")
 
 @bot.command()
-async def بنق(ctx):
-    await ctx.send(f"البنق حقي: `{round(bot.latency * 1000)}ms` 🏓")
+async def بنق(ctx): await ctx.send(f"البنق: `{round(bot.latency * 1000)}ms` 🏓")
 
 @bot.command()
 async def سيرفر(ctx):
     embed = discord.Embed(title=f"معلومات {ctx.guild.name}", color=0x3498db)
     embed.set_thumbnail(url=ctx.guild.icon.url if ctx.guild.icon else None)
-    embed.add_field(name="عدد الأعضاء", value=f"`{ctx.guild.member_count}`", inline=True)
-    embed.add_field(name="تاريخ الإنشاء", value=ctx.guild.created_at.strftime("%Y-%m-%d"), inline=True)
-    embed.add_field(name="صاحب السيرفر", value=ctx.guild.owner.mention, inline=True)
+    embed.add_field(name="الأعضاء", value=f"`{ctx.guild.member_count}`", inline=True)
+    embed.add_field(name="البوتات", value=f"`{len([m for m in ctx.guild.members if m.bot])}`", inline=True)
+    embed.add_field(name="الرولات", value=f"`{len(ctx.guild.roles)}`", inline=True)
     await ctx.send(embed=embed)
 
 @bot.command()
+async def يوزر(ctx, member: discord.Member = None):
+    member = member or ctx.author
+    embed = discord.Embed(title=f"معلومات {member.name}", color=member.color)
+    embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
+    embed.add_field(name="دخل السيرفر", value=member.joined_at.strftime("%Y-%m-%d"), inline=True)
+    embed.add_field(name="تحذيراته", value=f"`{التحذيرات.get(member.id, 0)}`", inline=True)
+    await ctx.send(embed=embed)
+
+# ===== 2. أوامر الإدارة =====
+@bot.command()
+@commands.has_permissions(manage_messages=True)
 async def مسح(ctx, عدد: int):
-    if not ctx.author.guild_permissions.manage_messages:
-        await ctx.send("ما عندك صلاحية تمسح رسائل ❌")
-        return
-    if عدد > 100:
-        await ctx.send("أقصى شي 100 رسالة ❌")
-        return
     await ctx.channel.purge(limit=عدد + 1)
     await ctx.send(f"تم مسح `{عدد}` رسالة ✅", delete_after=3)
 
-@bot.event
-async def on_ready():
-    print(f'تم تسجيل الدخول باسم {bot.user}')
-    print('البوت جاهز ✅')
+@bot.command()
+@commands.has_permissions(moderate_members=True)
+async def ميوت(ctx, member: discord.Member, وقت: int, *, السبب="مافي سبب"):
+    role = discord.utils.get(ctx.guild.roles, name="Muted")
+    if not role:
+        role = await ctx.guild.create_role(name="Muted")
+        for ch in ctx.guild.channels:
+            await ch.set_permissions(role, send_messages=False)
+    await member.add_roles(role)
+    await ctx.send(f"تم اعطاء {member.mention} ميوت لمدة {وقت} دقيقة | السبب: {السبب} 🔇")
+    await asyncio.sleep(وقت * 60)
+    await member.remove_roles(role)
+
+@bot.command()
+@commands.has_permissions(moderate_members=True)
+async def فك(ctx, member: discord.Member):
+    role = discord.utils.get(ctx.guild.roles, name="Muted")
+    await member.remove_roles(role)
+    await ctx.send(f"تم فك الميوت عن {member.mention} ✅")
+
+@bot.command()
+@commands.has_permissions(kick_members=True)
+async def طرد(ctx, member: discord.Member, *, السبب="مافي سبب"):
+    await member.kick(reason=السبب)
+    await ctx.send(f"تم طرد {member.mention} | السبب: {السبب} 👢")
+
+@bot.command()
+@commands.has_permissions(ban_members=True)
+async def باند(ctx, member: discord.Member, *, السبب="مافي سبب"):
+    await member.ban(reason=السبب)
+    await ctx.send(f"تم تبنيد {member.mention} | السبب: {السبب} 🔨")
+
+# ===== 3. نظام التحذيرات اليدوي =====
+@bot.command()
+@commands.has_permissions(kick_members=True)
+async def تحذير(ctx, member: discord.Member, *, السبب="مافي سبب"):
+    user_id = member.id
+    if user_id not in التحذيرات: التحذيرات[user_id] = 0
+    التحذيرات[user_id] += 1
+    await ctx.send(f"تم تحذير {member.mention} | {التحذيرات[user_id]}/3 | السبب: {السبب} ⚠️")
+
+@bot.command()
+async def تحذيراتي(ctx):
+    await ctx.send(f"عندك `{التحذيرات.get(ctx.author.id, 0)}` تحذير ⚠️")
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def مسح_تحذيرات(ctx, member: discord.Member):
+    التحذيرات[member.id] = 0
+    await ctx.send(f"تم مسح تحذيرات {member.mention} ✅")
+
+# ===== 4. أمر المساعدة =====
+@bot.command()
+async def مساعدة(ctx):
+    embed = discord.Embed(title="أوامر البوت", description="البريفكس: `!`", color=0x9b59b6)
+    embed.add_field(name="🎯 عامة", value="`هلا` `بنق` `سيرفر` `يوزر` `تحذيراتي`", inline=False)
+    embed.add_field(name="⚙️ إدارة", value="`مسح` `ميوت` `فك` `طرد` `باند` `تحذير` `مسح_تحذيرات`", inline=False)
+    embed.add_field(name="🛡️ تلقائي", value="حذف السب + ميوت بعد 3 تحذيرات + لوق + ردود", inline=False)
+    await ctx.send(embed=embed)
 
 bot.run(TOKEN)
