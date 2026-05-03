@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import json
 import os
 
-TOKEN = os.getenv("TOKEN")  # ياخذ التوكن من Railway
+TOKEN = os.getenv("TOKEN")
 اسم_روم_الترحيب = "شات-عام"
 اسم_روم_اللوق = "اللوق"
 ملف_التذكيرات = "reminders.json"
@@ -34,7 +34,79 @@ async def on_member_join(member):
         embed.set_footer(text="لا تنسى تقرأ القوانين")
         await channel.send(embed=embed)
 
-# ===== 2. مسح الرسائل المسيئة =====
+# ===== 2. حذف الكلمات المسيئة + الردود التلقائية =====
+@bot.event
+async def on_message(message):
+    # لا يرد على نفسه أو على البوتات الثانية
+    if message.author.bot:
+        return
+
+    # حذف الكلمات المسيئة + لوق
+    for كلمة in الكلمات_المسيئة:
+        if كلمة in message.content.lower():
+            await message.delete()
+            
+            # رسالة تحذير تنحذف بعد 5 ثواني
+            try:
+                await message.channel.send(f"{message.author.mention} لا تستخدم كلمات سيئة 🚫", delete_after=5)
+            except:
+                pass
+            
+            # يرسل تقرير في روم اللوق
+            روم_اللوق = discord.utils.get(message.guild.channels, name=اسم_روم_اللوق)
+            if روم_اللوق:
+                embed = discord.Embed(
+                    title="تم حذف رسالة سيئة 🚫",
+                    color=0xff0000,
+                    timestamp=message.created_at
+                )
+                embed.add_field(name="العضو", value=f"{message.author.mention}", inline=True)
+                embed.add_field(name="الروم", value=message.channel.mention, inline=True)
+                embed.add_field(name="الكلمة", value=f"||{كلمة}||", inline=False)
+                embed.add_field(name="الرسالة كاملة", value=f"```{message.content}```", inline=False)
+                embed.set_footer(text=f"ID: {message.author.id}")
+                await روم_اللوق.send(embed=embed)
+            
+            return
+
+    msg = message.content.lower()
+
+    # ردود السلام والصباح والمساء
+    if msg == "السلام عليكم":
+        await message.channel.send(f"وعليكم السلام ورحمة الله {message.author.mention}")
+    
+    elif msg == "صباح الخير":
+        await message.channel.send(f"صباح النور {message.author.mention} ☀️")
+    
+    elif msg == "صباح النور":
+        await message.channel.send(f"صباح الورد {message.author.mention} 🌹")
+    
+    elif msg == "صباح الورد":
+        await message.channel.send(f"صباح العسل {message.author.mention} 🍯")
+
+    elif msg == "مساء الخير":
+        await message.channel.send(f"مساء النور {message.author.mention} 🌙")
+    
+    elif msg == "مساء النور":
+        await message.channel.send(f"مساء الورد {message.author.mention} 🌸")
+    
+    elif msg == "مساء الورد":
+        await message.channel.send(f"مساء العسل {message.author.mention} 🍯")
+
+    # مهم عشان الأوامر تشتغل
+    await bot.process_commands(message)
+
+# ===== 3. أوامر البوت =====
+@bot.command()
+async def هلا(ctx):
+    await ctx.send(f"هلا والله {ctx.author.mention} 👋")
+
+@bot.event
+async def on_ready():
+    print(f'تم تسجيل الدخول باسم {bot.user}')
+    print('البوت جاهز ✅')
+
+bot.run(TOKEN)# ===== 2. مسح الرسائل المسيئة =====
 @bot.event
 async def on_message(message):
     # 1. لا يرد على نفسه أو على البوتات الثانية
