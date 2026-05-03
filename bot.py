@@ -133,12 +133,13 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    msg = message.content.lower()  # نحول كل شي سمول عشان ما تفرق الكابيتال
+    msg = message.content.lower()
 
-    # الردود اللي طلبتها
+    # ردود السلام
     if msg == "السلام عليكم":
         await message.channel.send(f"وعليكم السلام ورحمة الله {message.author.mention}")
     
+    # ردود الصباح
     elif msg == "صباح الخير":
         await message.channel.send(f"صباح النور {message.author.mention} ☀️")
     
@@ -148,7 +149,17 @@ async def on_message(message):
     elif msg == "صباح الورد":
         await message.channel.send(f"صباح العسل {message.author.mention} 🍯")
 
-    # مهم جداً: هذا يخلي أوامر !هلا و !ذكرني تشتغل مع الرد التلقائي
+    # ردود المساء - الجديدة
+    elif msg == "مساء الخير":
+        await message.channel.send(f"مساء النور {message.author.mention} 🌙")
+    
+    elif msg == "مساء النور":
+        await message.channel.send(f"مساء الورد {message.author.mention} 🌸")
+    
+    elif msg == "مساء الورد":
+        await message.channel.send(f"مساء العسل {message.author.mention} 🍯")
+
+    # مهم عشان الأوامر الثانية تشتغل
     await bot.process_commands(message)
 
 bot.run(TOKEN)
