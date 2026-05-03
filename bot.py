@@ -127,4 +127,28 @@ async def on_ready():
 async def هلا(ctx):
     await ctx.send(f'هلا والله {ctx.author.mention} منورنا 👋')
 
+@bot.event
+async def on_message(message):
+    # لا يرد على نفسه أو على البوتات الثانية
+    if message.author.bot:
+        return
+
+    msg = message.content.lower()  # نحول كل شي سمول عشان ما تفرق الكابيتال
+
+    # الردود اللي طلبتها
+    if msg == "السلام عليكم":
+        await message.channel.send(f"وعليكم السلام ورحمة الله {message.author.mention}")
+    
+    elif msg == "صباح الخير":
+        await message.channel.send(f"صباح النور {message.author.mention} ☀️")
+    
+    elif msg == "صباح النور":
+        await message.channel.send(f"صباح الورد {message.author.mention} 🌹")
+    
+    elif msg == "صباح الورد":
+        await message.channel.send(f"صباح العسل {message.author.mention} 🍯")
+
+    # مهم جداً: هذا يخلي أوامر !هلا و !ذكرني تشتغل مع الرد التلقائي
+    await bot.process_commands(message)
+
 bot.run(TOKEN)
