@@ -275,6 +275,100 @@ async def توب(ctx):
     embed.description = desc if desc else "مافي بيانات"
     await ctx.send(embed=embed)
 
+@bot.command(name="عط")
+@commands.has_permissions(manage_messages=True)
+async def عط(ctx, member: discord.Member, amount: int):
+    if amount <= 0:
+        await ctx.send("الكمية لازم أكبر من صفر ❌")
+        return
+
+    guild_id = str(ctx.guild.id)
+    user_id = str(member.id)
+
+    if guild_id not in اللفلات:
+        اللفلات[guild_id] = {}
+    if user_id not in اللفلات[guild_id]:
+        اللفلات[guild_id][user_id] = {"xp": 0, "level": 0}
+
+    xp_قديم = اللفلات[guild_id][user_id]["xp"]
+    lvl_قديم = اللفلات[guild_id][user_id]["level"]
+
+    xp_جديد = xp_قديم + amount
+    lvl_جديد = حساب_xp_اللفل(xp_جديد)
+
+    اللفلات[guild_id][user_id]["xp"] = xp_جديد
+    اللفلات[guild_id][user_id]["level"] = lvl_جديد
+    حفظ_اللفلات(اللفلات)
+
+    if lvl_جديد > lvl_قديم:
+        channel = discord.utils.get(ctx.guild.channels, name=اسم_روم_اللفل)
+        if channel:
+            embed = discord.Embed(
+                title="🎉 لفل اب!",
+                description=f"{member.mention} وصل لفل **{lvl_جديد}**",
+                color=0xf1c40f
+            )
+            await channel.send(embed=embed)
+
+        if lvl_جديد in رولات_اللفل:
+            role_name, role_color = رولات_اللفل[lvl_جديد]
+            role = discord.utils.get(ctx.guild.roles, name=role_name)
+            if not role:
+                role = await ctx.guild.create_role(name=role_name, color=role_color, reason="رول لفل تلقائي")
+            await member.add_roles(role)
+            await ctx.channel.send(f"مبروك {member.mention} حصلت على رول {role.mention} 🌟")
+
+    await ctx.send(f"✅ تم إعطاء {member.mention} **{amount} XP**\nلفله الحين: `{lvl_جديد}` | XP: `{xp_جديد}`")
+
+# ===== الأمر الجديد: خصم XP =====
+@bot.command(name="خصم")
+@commands.has_permissions(administrator=True)
+async def خصم(ctx, member: discord.Member, amount: int):
+    if amount <= 0:
+        await ctx.send("الكمية لازم أكبر من صفر ❌")
+        return
+
+    guild_id = str(ctx.guild.id)
+    user_id = str(member.id)
+
+    if guild_id not in اللفلات or user_id not in اللفلات[guild_id]:
+        await ctx.send(f"{member.mention} ما عنده XP أصلاً ❌")
+        return
+
+    xp_قديم = اللفلات[guild_id][user_id]["xp"]
+    lvl_قديم = اللفلات[guild_id][user_id]["level"]
+
+    xp_جديد = xp_قديم - amount
+    if xp_جديد < 0:
+        xp_جديد = 0
+
+    lvl_جديد = حساب_xp_اللفل(xp_جديد)
+
+    اللفلات[guild_id][user_id]["xp"] = xp_جديد
+    اللفلات[guild_id][user_id]["level"] = lvl_جديد
+    حفظ_اللفلات(اللفلات)
+
+    # لو نزل لفل، شيل رولات اللفل العالية
+    if lvl_جديد < lvl_قديم:
+        for lvl_role, role_data in رولات_اللفل.items():
+            if lvl_role > lvl_جديد:
+                role_name = role_data[0]
+                role = discord.utils.get(ctx.guild.roles, name=role_name)
+                if role and role in member.roles:
+                    await member.remove_roles(role)
+
+    await ctx.send(f"✅ تم خصم **{amount} XP** من {member.mention}\nلفله الحين: `{lvl_جديد}` | XP: `{xp_جديد}`")
+
+@عط.error
+@خصم.error
+async def xp_error(ctx, error):
+    if isinstance(error, commands.MissingPermissions):
+        await ctx.send("ما عندك صلاحية ❌ تحتاج إدارة الرسائل للأمر `عط` وأدمن للأمر `خصم`")
+    elif isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send("الاستخدام: `!عط @عضو 100` أو `!خصم @عضو 100`")
+    elif isinstance(error, commands.BadArgument):
+        await ctx.send("تأكد أنك منشنت العضو وكتبت رقم صحيح")
+
 # ===== 3. أوامر الإدارة =====
 @bot.command()
 @commands.has_permissions(manage_messages=True)
@@ -385,7 +479,7 @@ async def رولات(ctx):
 async def مساعدة(ctx):
     embed = discord.Embed(title="أوامر البوت", description="البريفكس: `!`", color=0x9b59b6)
     embed.add_field(name="🎯 عامة", value="`هلا` `بنق` `سيرفر` `يوزر` `تحذيراتي` `رولات` `لفل` `توب`", inline=False)
-    embed.add_field(name="⚙️ إدارة", value="`مسح` `ميوت` `فك` `طرد` `باند` `تحذير` `مسح_تحذيرات`", inline=False)
+    embed.add_field(name="⚙️ إدارة", value="`مسح` `ميوت` `فك` `طرد` `باند` `تحذير` `مسح_تحذيرات` `عط` `خصم`", inline=False)
     embed.add_field(name="👑 رولات", value="`سوي_رول` `رول` `شيل_رول`", inline=False)
     embed.add_field(name="🛡️ تلقائي", value="رول الأعضاء الجدد + نظام XP + ترحيب + وداع + حذف السب + ميوت بعد 3 تحذيرات + لوق + ردود", inline=False)
     await ctx.send(embed=embed)
