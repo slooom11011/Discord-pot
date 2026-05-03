@@ -58,7 +58,7 @@ async def on_message(message):
 
     msg = message.content.lower()
     if msg == "السلام عليكم":
-        await message.channel.send(f"وعليكم السلام ورحمة الله {message.author.mention}")
+        await message.channel.send(f" وعليكم السلام ورحمة الله وبركاته {message.author.mention}")
     elif msg == "صباح الخير":
         await message.channel.send(f"صباح النور {message.author.mention} ☀️")
     elif msg == "صباح النور":
