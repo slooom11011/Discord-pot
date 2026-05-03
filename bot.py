@@ -124,9 +124,7 @@ async def on_ready():
     شيك_التذكيرات.start()
 
 @bot.command()
-@commands.has_permissions(manage_messages=True)
-async def مسح(ctx, amount: int):
-    await ctx.channel.purge(limit=amount + 1)
-    await ctx.send(f"تم مسح {amount} رسالة ✅", delete_after=3)
+async def هلا(ctx):
+    await ctx.send(f'هلا والله {ctx.author.mention} منورنا 👋')
 
 bot.run(TOKEN)
