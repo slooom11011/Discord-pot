@@ -5,19 +5,17 @@ import asyncio
 import random
 from datetime import datetime, timedelta
 import aiosqlite
-import pytz
-import re
+import pytz # مكتبة الوقت
 
 TOKEN = os.getenv("TOKEN")
 اسم_روم_الترحيب = "شات-العام"
 اسم_روم_اللوق = "المخالفات"
 اسم_روم_الوداع = "شات-العام"
 اسم_روم_اللفل = "لفل-اب"
-اسم_روم_توب_الاسبوع = "توب-الاسبوع"
+اسم_روم_توب_الاسبوع = "توب-الاسبوع" # روم التوب الأسبوعي
 
 # ===== إعدادات الرولات =====
 رول_الاعضاء_الجدد = ["الأعضاء الجدد", 0x95a5a6]
-رول_غير_موثق = ["غير موثق", 0xe74c3c]
 
 رولات_اللفل = {
     1: ["مبتدئ", 0x95a5a6],
@@ -31,7 +29,6 @@ TOKEN = os.getenv("TOKEN")
 
 التحذيرات = {}
 كولداون_xp = {}
-رسائل_السبام = {}
 
 # ===== نظام XP مع SQLite =====
 async def init_db():
@@ -118,20 +115,6 @@ async def تحديث_رول_اللفل(member, lvl_جديد):
         return role
     return None
 
-# ===== دوال الحماية =====
-async def ميوت_مؤقت(member, المدة_ثواني, السبب):
-    role = discord.utils.get(member.guild.roles, name="Muted")
-    if not role:
-        role = await member.guild.create_role(name="Muted")
-        for ch in member.guild.channels:
-            await ch.set_permissions(role, send_messages=False, add_reactions=False)
-    await member.add_roles(role, reason=السبب)
-    await asyncio.sleep(المدة_ثواني)
-    try:
-        await member.remove_roles(role, reason="انتهاء الميوت المؤقت")
-    except:
-        pass
-
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
@@ -139,9 +122,10 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ===== مهمة توب الأسبوع =====
-@tasks.loop(time=datetime.strptime("12:00", "%H:%M").time())
+@tasks.loop(time=datetime.strptime("12:00", "%H:%M").time()) # الساعة 12 الظهر
 async def نشر_توب_الاسبوع():
-    if datetime.now(pytz.timezone('Asia/Riyadh')).weekday()!= 4:
+    # نتأكد انه يوم الجمعة
+    if datetime.now(pytz.timezone('Asia/Riyadh')).weekday()!= 4: # 4 = الجمعة
         return
 
     for guild in bot.guilds:
@@ -174,32 +158,11 @@ async def نشر_توب_الاسبوع():
 async def on_ready():
     await init_db()
     print(f'تم تسجيل الدخول باسم {bot.user}')
-    await bot.change_presence(activity=discord.Game(name="!مساعدة | حماية 24/7"))
-    نشر_توب_الاسبوع.start()
+    await bot.change_presence(activity=discord.Game(name="!مساعدة | فلترة 24/7"))
+    نشر_توب_الاسبوع.start() # شغل مهمة التوب الأسبوعي
 
 @bot.event
 async def on_member_join(member):
-    # ===== حماية الحسابات الجديدة =====
-    عمر_الحساب = (datetime.utcnow() - member.created_at).days
-    if عمر_الحساب < 7:
-        role_name, role_color = رول_غير_موثق
-        role = discord.utils.get(member.guild.roles, name=role_name)
-        if not role:
-            role = await member.guild.create_role(name=role_name, color=role_color, reason="رول الحسابات الجديدة")
-            for ch in member.guild.channels:
-                await ch.set_permissions(role, send_messages=False, add_reactions=False)
-        await member.add_roles(role)
-
-        روم_اللوق = discord.utils.get(member.guild.channels, name=اسم_روم_اللوق)
-        if روم_اللوق:
-            embed = discord.Embed(title="⚠️ دخل حساب جديد", color=0xe67e22, timestamp=datetime.utcnow())
-            embed.add_field(name="العضو", value=member.mention, inline=True)
-            embed.add_field(name="عمر الحساب", value=f"`{عمر_الحساب} يوم`", inline=True)
-            embed.add_field(name="الحالة", value="تم إعطاؤه ميوت تلقائي", inline=False)
-            await روم_اللوق.send(embed=embed)
-        return
-
-    # رول الأعضاء الجدد العادي
     role_name, role_color = رول_الاعضاء_الجدد
     role = discord.utils.get(member.guild.roles, name=role_name)
     if not role:
@@ -243,50 +206,6 @@ async def on_member_remove(member):
 async def on_message(message):
     if message.author.bot:
         return
-
-    # ===== 1. حماية الروابط =====
-    if re.search(r'discord\.gg/|discord\.com/invite/|discordapp\.com/invite/', message.content.lower()):
-        if not message.author.guild_permissions.manage_messages:
-            await message.delete()
-            await message.channel.send(f"{message.author.mention} ممنوع نشر روابط السيرفرات 🚫 ميوت 5 دقايق", delete_after=5)
-            asyncio.create_task(ميوت_مؤقت(message.author, 300, "نشر رابط"))
-
-            روم_اللوق = discord.utils.get(message.guild.channels, name=اسم_روم_اللوق)
-            if روم_اللوق:
-                embed = discord.Embed(title="تم حذف رابط 🚫", color=0xe74c3c, timestamp=datetime.utcnow())
-                embed.add_field(name="العضو", value=message.author.mention, inline=True)
-                embed.add_field(name="القناة", value=message.channel.mention, inline=True)
-                embed.add_field(name="الرابط", value=f"||{message.content}||", inline=False)
-                await روم_اللوق.send(embed=embed)
-            return
-
-    # ===== 2. حماية المنشن =====
-    if message.mention_everyone:
-        if not message.author.guild_permissions.mention_everyone:
-            await message.delete()
-            await message.channel.send(f"{message.author.mention} ممنوع منشن @everyone 🚫 ميوت 10 دقايق")
-            asyncio.create_task(ميوت_مؤقت(message.author, 600, "منشن everyone"))
-            return
-
-    if len(message.mentions) >= 5:
-        if not message.author.guild_permissions.mention_everyone:
-            await message.delete()
-            await message.channel.send(f"{message.author.mention} ممنوع تمنشن أكثر من 5 أشخاص 🚫", delete_after=5)
-            return
-
-    # ===== 3. حماية السبام =====
-    if message.author.id not in رسائل_السبام:
-        رسائل_السبام[message.author.id] = []
-
-    رسائل_السبام[message.author.id].append(message.content)
-    if len(رسائل_السبام[message.author.id]) > 5:
-        رسائل_السبام[message.author.id].pop(0)
-
-    if رسائل_السبام[message.author.id].count(message.content) >= 4:
-        if not message.author.guild_permissions.manage_messages:
-            await message.delete()
-            await message.channel.send(f"{message.author.mention} لا تكرر الرسالة 🚫", delete_after=5)
-            return
 
     # ===== نظام XP مع SQLite =====
     user_id = str(message.author.id)
@@ -588,54 +507,6 @@ async def باند(ctx, member: discord.Member, *, السبب="مافي سبب")
     await member.ban(reason=السبب)
     await ctx.send(f"تم تبنيد {member.mention} | السبب: {السبب} 🔨")
 
-# ===== أوامر الحماية الجديدة =====
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def قفل(ctx):
-    """يقفل كل رومات السيرفر - للطوارئ"""
-    for channel in ctx.guild.text_channels:
-        await channel.set_permissions(ctx.guild.default_role, send_messages=False)
-    await ctx.send("🔒 تم قفل السيرفر كامل | للفتح استخدم `!فتح`")
-
-    روم_اللوق = discord.utils.get(ctx.guild.channels, name=اسم_روم_اللوق)
-    if روم_اللوق:
-        embed = discord.Embed(title="🔒 تم تفعيل القفل", color=0xe74c3c, timestamp=datetime.utcnow())
-        embed.add_field(name="بواسطة", value=ctx.author.mention, inline=True)
-        await روم_اللوق.send(embed=embed)
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def فتح(ctx):
-    """يفتح كل رومات السيرفر"""
-    for channel in ctx.guild.text_channels:
-        await channel.set_permissions(ctx.guild.default_role, send_messages=True)
-    await ctx.send("🔓 تم فتح السيرفر كامل")
-
-    روم_اللوق = discord.utils.get(ctx.guild.channels, name=اسم_روم_اللوق)
-    if روم_اللوق:
-        embed = discord.Embed(title="🔓 تم فك القفل", color=0x2ecc71, timestamp=datetime.utcnow())
-        embed.add_field(name="بواسطة", value=ctx.author.mention, inline=True)
-        await روم_اللوق.send(embed=embed)
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def توثيق(ctx, member: discord.Member):
-    """يوثق حساب جديد ويشيل عنه الميوت"""
-    role_name, _ = رول_غير_موثق
-    role = discord.utils.get(ctx.guild.roles, name=role_name)
-    if role and role in member.roles:
-        await member.remove_roles(role)
-        await ctx.send(f"✅ تم توثيق {member.mention}")
-
-        # يعطيه رول الأعضاء الجدد
-        role_name_new, role_color_new = رول_الاعضاء_الجدد
-        role_new = discord.utils.get(ctx.guild.roles, name=role_name_new)
-        if not role_new:
-            role_new = await ctx.guild.create_role(name=role_name_new, color=role_color_new)
-        await member.add_roles(role_new)
-    else:
-        await ctx.send("❌ العضو موثق أصلاً أو ما عليه رول غير موثق")
-
 # ===== 4. نظام التحذيرات =====
 @bot.command()
 @commands.has_permissions(kick_members=True)
@@ -681,4 +552,45 @@ async def رول(ctx, member: discord.Member, *, اسم_الرول):
     await member.add_roles(role)
     await ctx.send(f"تم إعطاء {member.mention} رول {role.mention} ✅")
 
-@bot.command(name
+@bot.command(name="شيل_رول")
+@commands.has_permissions(manage_roles=True)
+async def شيل_رول(ctx, member: discord.Member, *, اسم_الرول):
+    role = discord.utils.get(ctx.guild.roles, name=اسم_الرول)
+    if not role:
+        await ctx.send("❌ الرول مو موجود")
+        return
+    if role not in member.roles:
+        await ctx.send(f"❌ {member.mention} ما عنده الرول أصلاً")
+        return
+    await member.remove_roles(role)
+    await ctx.send(f"تم إزالة رول {role.mention} من {member.mention} ✅")
+
+@bot.command(name="رولات")
+async def رولات(ctx):
+    roles = [role.mention for role in ctx.guild.roles if role.name!= "@everyone"]
+    embed = discord.Embed(title=f"رولات {ctx.guild.name}", color=0x3498db)
+    embed.description = "\n".join(roles) if roles else "مافي رولات"
+    embed.set_footer(text=f"العدد: {len(roles)}")
+    await ctx.send(embed=embed)
+
+# ===== 6. أمر النسخة الاحتياطية =====
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def نسخة(ctx):
+    """يرسل لك ملف قاعدة البيانات كنسخة احتياطية"""
+    try:
+        await ctx.send("هذي نسخة من ملف اللفلات 📁 احفظها عندك", file=discord.File('levels.db'))
+    except FileNotFoundError:
+        await ctx.send("❌ ملف اللفلات لسه ما انشئ. خلي أحد يكتب رسالة أول عشان ينحفظ")
+
+# ===== 7. أمر المساعدة =====
+@bot.command()
+async def مساعدة(ctx):
+    embed = discord.Embed(title="أوامر البوت", description="البريفكس: `!`", color=0x9b59b6)
+    embed.add_field(name="🎯 عامة", value="`هلا` `بنق` `سيرفر` `يوزر` `تحذيراتي` `رولات` `لفل` `توب` `توب_اسبوع`", inline=False)
+    embed.add_field(name="⚙️ إدارة", value="`مسح` `ميوت` `فك` `طرد` `باند` `تحذير` `مسح_تحذيرات` `عط` `خصم` `نسخة`", inline=False)
+    embed.add_field(name="👑 رولات", value="`سوي_رول` `رول` `شيل_رول`", inline=False)
+    embed.add_field(name="🛡️ تلقائي", value="رول الأعضاء الجدد + نظام XP + ترحيب + وداع + حذف السب + ميوت بعد 3 تحذيرات + لوق + ردود + توب أسبوعي", inline=False)
+    await ctx.send(embed=embed)
+
+bot.run(TOKEN)
