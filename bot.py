@@ -32,6 +32,16 @@ async def save_data(g, u, xp, lvl, weekly):
 def calc_lvl(xp): l=0; [l:=l+1 for _ in range(100) if xp>=(50*(l**2)+50*l)]; return l-1
 def next_xp(l): return 50*(l**2)+50*l
 
+def make_progress_bar(xp, lvl, bar_len=10):
+    if lvl == 0: return "█" * bar_len, 100
+    prev_xp = next_xp(lvl-1)
+    needed = next_xp(lvl) - prev_xp
+    have = xp - prev_xp
+    prog = int((have / needed) * bar_len) if needed > 0 else bar_len
+    bar = "█"*prog + "░"*(bar_len-prog)
+    percent = int((have / needed) * 100) if needed > 0 else 100
+    return bar, percent
+
 async def update_role(m, lvl):
     for r in [discord.utils.get(m.guild.roles, name=d[0]) for d in CFG["lvl_roles"].values() if discord.utils.get(m.guild.roles, name=d[0]) in m.roles]:
         await m.remove_roles(r)
@@ -130,14 +140,13 @@ async def on_message(msg):
         await save_data(gid, uid, xp, new_lvl, wxp)
         if new_lvl > lvl:
             if ch:=discord.utils.get(msg.guild.channels, name=CFG["lvl_up"]):
+                bar, percent = make_progress_bar(xp, new_lvl, 10)
                 e=discord.Embed(title="🎉 LEVEL UP!", description=f'**{msg.author.mention}** وصل **لفل {new_lvl}** 🚀', color=0xf1c40f)
                 e.set_thumbnail(url=msg.author.display_avatar.url)
                 e.add_field(name="📊 XP الحالي", value=f'`{xp:,}`', inline=True)
                 e.add_field(name="⭐ اللفل الجديد", value=f'`{new_lvl}`', inline=True)
                 e.add_field(name="🎯 لللفل الجاي", value=f'`{next_xp(new_lvl)-xp:,} XP`', inline=True)
-                bar_len = 10; prog = int((xp-next_xp(new_lvl-1))/(next_xp(new_lvl)-next_xp(new_lvl-1))*bar_len)
-                bar = "█"*prog + "░"*(bar_len-prog)
-                e.add_field(name="التقدم", value=f'`{bar}` {int((xp-next_xp(new_lvl-1))/(next_xp(new_lvl)-next_xp(new_lvl-1))*100)}%', inline=False)
+                e.add_field(name="التقدم", value=f'`{bar}` {percent}%', inline=False)
                 e.set_footer(text=msg.guild.name, icon_url=msg.guild.icon.url if msg.guild.icon else None)
                 e.timestamp = datetime.now(timezone.utc)
                 await ch.send(embed=e)
@@ -185,9 +194,8 @@ async def يوزر(ctx, m: discord.Member=None):
         e.add_field(name="⭐ اللفل", value=f'`{d["level"]}`', inline=True)
         e.add_field(name="💎 XP الكلي", value=f'`{d["xp"]:,}/{next_xp(d["level"]):,}`', inline=True)
         e.add_field(name="📈 XP الأسبوع", value=f'`{d["weekly_xp"]:,}`', inline=True)
-        bar_len = 10; prog = int((d["xp"]-next_xp(d["level"]-1))/(next_xp(d["level"])-next_xp(d["level"]-1))*bar_len)
-        bar = "█"*prog + "░"*(bar_len-prog)
-        e.add_field(name="التقدم للفل الجاي", value=f'`{bar}` {int((d["xp"]-next_xp(d["level"]-1))/(next_xp(d["level"])-next_xp(d["level"]-1))*100)}%', inline=False)
+        bar, percent = make_progress_bar(d["xp"], d["level"], 10)
+        e.add_field(name="التقدم للفل الجاي", value=f'`{bar}` {percent}%', inline=False)
     roles = [r.mention for r in m.roles if r.name!="@everyone"]
     e.add_field(name="🎭 الرولات", value=" ".join(roles) if roles else "لا يوجد", inline=False)
     e.set_footer(text=f"ID: {m.id}")
@@ -204,9 +212,8 @@ async def لفل(ctx, m: discord.Member=None):
     e.add_field(name="XP", value=f'`{d["xp"]:,}/{next_xp(d["level"]):,}`', inline=True)
     e.add_field(name="باقي", value=f'`{next_xp(d["level"])-d["xp"]:,} XP`', inline=True)
     e.add_field(name="XP الأسبوع", value=f'`{d["weekly_xp"]:,}`', inline=True)
-    bar_len = 15; prog = int((d["xp"]-next_xp(d["level"]-1))/(next_xp(d["level"])-next_xp(d["level"]-1))*bar_len)
-    bar = "█"*prog + "░"*(bar_len-prog)
-    e.add_field(name="التقدم", value=f'`{bar}` {int((d["xp"]-next_xp(d["level"]-1))/(next_xp(d["level"])-next_xp(d["level"]-1))*100)}%', inline=False)
+    bar, percent = make_progress_bar(d["xp"], d["level"], 15)
+    e.add_field(name="التقدم", value=f'`{bar}` {percent}%', inline=False)
     e.set_footer(text=f"استخدم!توب لرؤية المتصدرين")
     await ctx.send(embed=e)
 
