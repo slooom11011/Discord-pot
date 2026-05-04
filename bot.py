@@ -160,7 +160,7 @@ async def on_message(message):
         xp_قديم = اللفلات[guild_id][user_id]["xp"]
         lvl_قديم = اللفلات[guild_id][user_id]["level"]
 
-        xp_جديد = xp_قديم + 1 # كل رسالة = 1 XP
+        xp_جديد = xp_قديم + 1
         lvl_جديد = حساب_xp_اللفل(xp_جديد)
 
         اللفلات[guild_id][user_id]["xp"] = xp_جديد
@@ -170,11 +170,17 @@ async def on_message(message):
         if lvl_جديد > lvl_قديم:
             channel = discord.utils.get(message.guild.channels, name=اسم_روم_اللفل)
             if channel:
+                # --- رسالة اللفل اب الجديدة مع صورة العضو ---
                 embed = discord.Embed(
                     title="🎉 لفل اب!",
                     description=f"{message.author.mention} وصل لفل **{lvl_جديد}**",
                     color=0xf1c40f
                 )
+                embed.set_thumbnail(url=message.author.display_avatar.url)
+                embed.add_field(name="XP الحالي", value=f"`{xp_جديد}`", inline=True)
+                embed.add_field(name="اللفل الجديد", value=f"`{lvl_جديد}`", inline=True)
+                embed.add_field(name="لللفل الجاي", value=f"`{حساب_xp_للفل_التالي(lvl_جديد) - xp_جديد} XP`", inline=True)
+                embed.set_footer(text=f"{message.guild.name}", icon_url=message.guild.icon.url if message.guild.icon else None)
                 await channel.send(embed=embed)
 
             # تحديث الرول
@@ -338,6 +344,10 @@ async def عط(ctx, member: discord.Member, amount: int):
                     description=f"{member.mention} وصل لفل **{lvl_جديد}**",
                     color=0xf1c40f
                 )
+                embed.set_thumbnail(url=member.display_avatar.url)
+                embed.add_field(name="XP الحالي", value=f"`{xp_جديد}`", inline=True)
+                embed.add_field(name="اللفل الجديد", value=f"`{lvl_جديد}`", inline=True)
+                embed.add_field(name="لللفل الجاي", value=f"`{حساب_xp_للفل_التالي(lvl_جديد) - xp_جديد} XP`", inline=True)
                 await channel.send(embed=embed)
 
         new_role = await تحديث_رول_اللفل(member, lvl_جديد)
@@ -500,7 +510,7 @@ async def مساعدة(ctx):
     embed = discord.Embed(title="أوامر البوت", description="البريفكس: `!`", color=0x9b59b6)
     embed.add_field(name="🎯 عامة", value="`هلا` `بنق` `سيرفر` `يوزر` `تحذيراتي` `رولات` `لفل` `توب`", inline=False)
     embed.add_field(name="⚙️ إدارة", value="`مسح` `ميوت` `فك` `طرد` `باند` `تحذير` `مسح_تحذيرات` `عط` `خصم`", inline=False)
-    embed.add_field(name="👑 رولات", value="`سوي_رول` `شيل_رول`", inline=False)
+    embed.add_field(name="👑 رولات", value="`سوي_رول` `رول` `شيل_رول`", inline=False)
     embed.add_field(name="🛡️ تلقائي", value="رول الأعضاء الجدد + نظام XP + ترحيب + وداع + حذف السب + ميوت بعد 3 تحذيرات + لوق + ردود", inline=False)
     await ctx.send(embed=embed)
 
