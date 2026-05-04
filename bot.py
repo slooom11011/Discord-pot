@@ -524,8 +524,8 @@ async def نسخة(ctx):
     embed = discord.Embed(title="معلومات البوت", color=0x3498db)
     embed.add_field(name="الإصدار", value="`v2.0`", inline=True)
     embed.add_field(name="المكتبة", value="`discord.py`", inline=True)
-    embed.add_field(name="المميزات", value="XP + حماية + رولات تلقائية + توب أسبوعي", inline=False)
-        embed.set_footer(text="بوت متكامل للسيرفرات العربية")
+        embed.add_field(name="المميزات", value="XP + حماية + رولات تلقائية + توب أسبوعي", inline=False)
+    embed.set_footer(text="بوت متكامل للسيرفرات العربية")
     await ctx.send(embed=embed)
 
 @bot.command()
