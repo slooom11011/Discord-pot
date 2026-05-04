@@ -1,10 +1,10 @@
 import discord
-from discord.ext import commands, tasks
+from discord.ext import commands
 import os
 import asyncio
-import json
 import random
 from datetime import datetime, timedelta
+import aiosqlite
 
 TOKEN = os.getenv("TOKEN")
 اسم_روم_الترحيب = "شات-العام"
@@ -27,21 +27,44 @@ TOKEN = os.getenv("TOKEN")
 الكلمات_المسيئة = ["سب1", "سب2", "كلمة_ممنوعة", "يا حيوان", "ياحيوان", "يا كلب", "ياكلب", "يامريض", "كس امك", "كسامك", "كل زق", "كلزق"]
 
 التحذيرات = {}
-
-# ===== نظام XP =====
-def تحميل_اللفلات():
-    try:
-        with open('levels.json', 'r') as f:
-            return json.load(f)
-    except:
-        return {}
-
-def حفظ_اللفلات(data):
-    with open('levels.json', 'w') as f:
-        json.dump(data, f)
-
-اللفلات = تحميل_اللفلات()
 كولداون_xp = {}
+
+# ===== نظام XP مع SQLite =====
+async def init_db():
+    async with aiosqlite.connect('levels.db') as db:
+        await db.execute('''
+            CREATE TABLE IF NOT EXISTS levels (
+                guild_id TEXT,
+                user_id TEXT,
+                xp INTEGER DEFAULT 0,
+                level INTEGER DEFAULT 0,
+                PRIMARY KEY (guild_id, user_id)
+            )
+        ''')
+        await db.commit()
+
+async def جلب_بيانات_العضو(guild_id, user_id):
+    async with aiosqlite.connect('levels.db') as db:
+        async with db.execute('SELECT xp, level FROM levels WHERE guild_id =? AND user_id =?', (guild_id, user_id)) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                return {"xp": row[0], "level": row[1]}
+            return {"xp": 0, "level": 0}
+
+async def تحديث_بيانات_العضو(guild_id, user_id, xp, level):
+    async with aiosqlite.connect('levels.db') as db:
+        await db.execute('''
+            INSERT INTO levels (guild_id, user_id, xp, level)
+            VALUES (?,?,?,?)
+            ON CONFLICT(guild_id, user_id)
+            DO UPDATE SET xp =?, level =?
+        ''', (guild_id, user_id, xp, level))
+        await db.commit()
+
+async def جلب_التوب(guild_id, limit=10):
+    async with aiosqlite.connect('levels.db') as db:
+        async with db.execute('SELECT user_id, xp, level FROM levels WHERE guild_id =? ORDER BY xp DESC LIMIT?', (guild_id, limit)) as cursor:
+            return await cursor.fetchall()
 
 def حساب_xp_اللفل(xp):
     lvl = 0
@@ -54,7 +77,6 @@ def حساب_xp_للفل_التالي(lvl):
 
 # ===== دالة تحديث رول اللفل =====
 async def تحديث_رول_اللفل(member, lvl_جديد):
-    # 1. شيل كل رولات اللفل القديمة
     رولات_للحذف = []
     for lvl, role_data in رولات_اللفل.items():
         role_name = role_data[0]
@@ -65,7 +87,6 @@ async def تحديث_رول_اللفل(member, lvl_جديد):
     if رولات_للحذف:
         await member.remove_roles(*رولات_للحذف, reason="تحديث رول اللفل")
 
-    # 2. شوف أعلى رول يستحقه العضو
     رول_مناسب = None
     اعلى_لفل = 0
     for lvl, role_data in رولات_اللفل.items():
@@ -73,7 +94,6 @@ async def تحديث_رول_اللفل(member, lvl_جديد):
             اعلى_لفل = lvl
             رول_مناسب = role_data
 
-    # 3. اعطيه الرول الجديد
     if رول_مناسب:
         role_name, role_color = رول_مناسب
         role = discord.utils.get(member.guild.roles, name=role_name)
@@ -91,6 +111,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_ready():
+    await init_db()
     print(f'تم تسجيل الدخول باسم {bot.user}')
     await bot.change_presence(activity=discord.Game(name="!مساعدة | فلترة 24/7"))
 
@@ -140,10 +161,11 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    # ===== نظام XP - كل رسالة = 1 XP =====
+    # ===== نظام XP مع SQLite =====
     user_id = str(message.author.id)
     guild_id = str(message.guild.id)
 
+    # كولداون دقيقة
     if user_id in كولداون_xp:
         if (datetime.utcnow() - كولداون_xp[user_id]).seconds < 60:
             pass
@@ -152,25 +174,18 @@ async def on_message(message):
     else:
         كولداون_xp[user_id] = datetime.utcnow()
 
-        if guild_id not in اللفلات:
-            اللفلات[guild_id] = {}
-        if user_id not in اللفلات[guild_id]:
-            اللفلات[guild_id][user_id] = {"xp": 0, "level": 0}
-
-        xp_قديم = اللفلات[guild_id][user_id]["xp"]
-        lvl_قديم = اللفلات[guild_id][user_id]["level"]
+        بيانات = await جلب_بيانات_العضو(guild_id, user_id)
+        xp_قديم = بيانات["xp"]
+        lvl_قديم = بيانات["level"]
 
         xp_جديد = xp_قديم + 1
         lvl_جديد = حساب_xp_اللفل(xp_جديد)
 
-        اللفلات[guild_id][user_id]["xp"] = xp_جديد
-        اللفلات[guild_id][user_id]["level"] = lvl_جديد
-        حفظ_اللفلات(اللفلات)
+        await تحديث_بيانات_العضو(guild_id, user_id, xp_جديد, lvl_جديد)
 
         if lvl_جديد > lvl_قديم:
             channel = discord.utils.get(message.guild.channels, name=اسم_روم_اللفل)
             if channel:
-                # --- رسالة اللفل اب الجديدة مع صورة العضو ---
                 embed = discord.Embed(
                     title="🎉 لفل اب!",
                     description=f"{message.author.mention} وصل لفل **{lvl_جديد}**",
@@ -183,7 +198,6 @@ async def on_message(message):
                 embed.set_footer(text=f"{message.guild.name}", icon_url=message.guild.icon.url if message.guild.icon else None)
                 await channel.send(embed=embed)
 
-            # تحديث الرول
             new_role = await تحديث_رول_اللفل(message.author, lvl_جديد)
             if new_role:
                 await message.channel.send(f"مبروك {message.author.mention} حصلت على رول {new_role.mention} 🌟")
@@ -256,13 +270,10 @@ async def يوزر(ctx, member: discord.Member = None):
     embed.add_field(name="دخل السيرفر", value=member.joined_at.strftime("%Y-%m-%d"), inline=True)
     embed.add_field(name="تحذيراته", value=f"`{التحذيرات.get(member.id, 0)}`", inline=True)
 
-    guild_id = str(ctx.guild.id)
-    user_id = str(member.id)
-    if guild_id in اللفلات and user_id in اللفلات[guild_id]:
-        xp = اللفلات[guild_id][user_id]["xp"]
-        lvl = اللفلات[guild_id][user_id]["level"]
-        embed.add_field(name="اللفل", value=f"`{lvl}`", inline=True)
-        embed.add_field(name="XP", value=f"`{xp}/{حساب_xp_للفل_التالي(lvl)}`", inline=True)
+    بيانات = await جلب_بيانات_العضو(str(ctx.guild.id), str(member.id))
+    if بيانات["xp"] > 0:
+        embed.add_field(name="اللفل", value=f"`{بيانات['level']}`", inline=True)
+        embed.add_field(name="XP", value=f"`{بيانات['xp']}/{حساب_xp_للفل_التالي(بيانات['level'])}`", inline=True)
 
     roles = [role.mention for role in member.roles if role.name!= "@everyone"]
     embed.add_field(name="الرولات", value=" ".join(roles) if roles else "لا يوجد", inline=False)
@@ -272,15 +283,14 @@ async def يوزر(ctx, member: discord.Member = None):
 @bot.command(name="لفل")
 async def لفل(ctx, member: discord.Member = None):
     member = member or ctx.author
-    guild_id = str(ctx.guild.id)
-    user_id = str(member.id)
+    بيانات = await جلب_بيانات_العضو(str(ctx.guild.id), str(member.id))
 
-    if guild_id not in اللفلات or user_id not in اللفلات[guild_id]:
+    if بيانات["xp"] == 0:
         await ctx.send(f"{member.mention} ما عنده XP لحد الحين")
         return
 
-    xp = اللفلات[guild_id][user_id]["xp"]
-    lvl = اللفلات[guild_id][user_id]["level"]
+    xp = بيانات["xp"]
+    lvl = بيانات["level"]
     xp_التالي = حساب_xp_للفل_التالي(lvl)
 
     embed = discord.Embed(title=f"لفل {member.name}", color=0x3498db)
@@ -292,18 +302,17 @@ async def لفل(ctx, member: discord.Member = None):
 
 @bot.command(name="توب")
 async def توب(ctx):
-    guild_id = str(ctx.guild.id)
-    if guild_id not in اللفلات:
+    top_users = await جلب_التوب(str(ctx.guild.id), 10)
+    if not top_users:
         await ctx.send("مافي أحد عنده XP")
         return
 
-    sorted_users = sorted(اللفلات[guild_id].items(), key=lambda x: x[1]["xp"], reverse=True)[:10]
     embed = discord.Embed(title=f"🏆 توب 10 في {ctx.guild.name}", color=0xf1c40f)
     desc = ""
-    for i, (user_id, data) in enumerate(sorted_users, 1):
+    for i, (user_id, xp, level) in enumerate(top_users, 1):
         try:
             user = await bot.fetch_user(int(user_id))
-            desc += f"**{i}.** {user.name} - لفل `{data['level']}` - `{data['xp']} XP`\n"
+            desc += f"**{i}.** {user.name} - لفل `{level}` - `{xp} XP`\n"
         except:
             continue
     embed.description = desc if desc else "مافي بيانات"
@@ -319,22 +328,15 @@ async def عط(ctx, member: discord.Member, amount: int):
     guild_id = str(ctx.guild.id)
     user_id = str(member.id)
 
-    if guild_id not in اللفلات:
-        اللفلات[guild_id] = {}
-    if user_id not in اللفلات[guild_id]:
-        اللفلات[guild_id][user_id] = {"xp": 0, "level": 0}
-
-    xp_قديم = اللفلات[guild_id][user_id]["xp"]
-    lvl_قديم = اللفلات[guild_id][user_id]["level"]
+    بيانات = await جلب_بيانات_العضو(guild_id, user_id)
+    xp_قديم = بيانات["xp"]
+    lvl_قديم = بيانات["level"]
 
     xp_جديد = xp_قديم + amount
     lvl_جديد = حساب_xp_اللفل(xp_جديد)
 
-    اللفلات[guild_id][user_id]["xp"] = xp_جديد
-    اللفلات[guild_id][user_id]["level"] = lvl_جديد
-    حفظ_اللفلات(اللفلات)
+    await تحديث_بيانات_العضو(guild_id, user_id, xp_جديد, lvl_جديد)
 
-    # تحديث الرول لو تغير اللفل
     if lvl_جديد!= lvl_قديم:
         if lvl_جديد > lvl_قديم:
             channel = discord.utils.get(ctx.guild.channels, name=اسم_روم_اللفل)
@@ -366,24 +368,19 @@ async def خصم(ctx, member: discord.Member, amount: int):
     guild_id = str(ctx.guild.id)
     user_id = str(member.id)
 
-    if guild_id not in اللفلات or user_id not in اللفلات[guild_id]:
+    بيانات = await جلب_بيانات_العضو(guild_id, user_id)
+    if بيانات["xp"] == 0:
         await ctx.send(f"{member.mention} ما عنده XP أصلاً ❌")
         return
 
-    xp_قديم = اللفلات[guild_id][user_id]["xp"]
-    lvl_قديم = اللفلات[guild_id][user_id]["level"]
+    xp_قديم = بيانات["xp"]
+    lvl_قديم = بيانات["level"]
 
-    xp_جديد = xp_قديم - amount
-    if xp_جديد < 0:
-        xp_جديد = 0
-
+    xp_جديد = max(0, xp_قديم - amount)
     lvl_جديد = حساب_xp_اللفل(xp_جديد)
 
-    اللفلات[guild_id][user_id]["xp"] = xp_جديد
-    اللفلات[guild_id][user_id]["level"] = lvl_جديد
-    حفظ_اللفلات(اللفلات)
+    await تحديث_بيانات_العضو(guild_id, user_id, xp_جديد, lvl_جديد)
 
-    # تحديث الرول لو نزل اللفل
     if lvl_جديد!= lvl_قديم:
         await تحديث_رول_اللفل(member, lvl_جديد)
 
