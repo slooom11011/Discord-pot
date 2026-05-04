@@ -58,7 +58,7 @@ async def تحديث_بيانات_العضو(guild_id, user_id, xp, level):
             VALUES (?,?,?,?)
             ON CONFLICT(guild_id, user_id)
             DO UPDATE SET xp =?, level =?
-        ''', (guild_id, user_id, xp, level))
+        ''', (guild_id, user_id, xp, level, xp, level))
         await db.commit()
 
 async def جلب_التوب(guild_id, limit=10):
@@ -501,12 +501,22 @@ async def رولات(ctx):
     embed.set_footer(text=f"العدد: {len(roles)}")
     await ctx.send(embed=embed)
 
-# ===== 6. أمر المساعدة =====
+# ===== 6. أمر النسخة الاحتياطية الجديد =====
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def نسخة(ctx):
+    """يرسل لك ملف قاعدة البيانات كنسخة احتياطية"""
+    try:
+        await ctx.send("هذي نسخة من ملف اللفلات 📁 احفظها عندك", file=discord.File('levels.db'))
+    except FileNotFoundError:
+        await ctx.send("❌ ملف اللفلات لسه ما انشئ. خلي أحد يكتب رسالة أول عشان ينحفظ")
+
+# ===== 7. أمر المساعدة =====
 @bot.command()
 async def مساعدة(ctx):
     embed = discord.Embed(title="أوامر البوت", description="البريفكس: `!`", color=0x9b59b6)
     embed.add_field(name="🎯 عامة", value="`هلا` `بنق` `سيرفر` `يوزر` `تحذيراتي` `رولات` `لفل` `توب`", inline=False)
-    embed.add_field(name="⚙️ إدارة", value="`مسح` `ميوت` `فك` `طرد` `باند` `تحذير` `مسح_تحذيرات` `عط` `خصم`", inline=False)
+    embed.add_field(name="⚙️ إدارة", value="`مسح` `ميوت` `فك` `طرد` `باند` `تحذير` `مسح_تحذيرات` `عط` `خصم` `نسخة`", inline=False)
     embed.add_field(name="👑 رولات", value="`سوي_رول` `رول` `شيل_رول`", inline=False)
     embed.add_field(name="🛡️ تلقائي", value="رول الأعضاء الجدد + نظام XP + ترحيب + وداع + حذف السب + ميوت بعد 3 تحذيرات + لوق + ردود", inline=False)
     await ctx.send(embed=embed)
