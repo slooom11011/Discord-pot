@@ -1,21 +1,22 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import os
 import asyncio
 import random
 from datetime import datetime, timedelta
 import aiosqlite
+import pytz # مكتبة الوقت
 
 TOKEN = os.getenv("TOKEN")
 اسم_روم_الترحيب = "شات-العام"
 اسم_روم_اللوق = "المخالفات"
 اسم_روم_الوداع = "شات-العام"
 اسم_روم_اللفل = "لفل-اب"
+اسم_روم_توب_الاسبوع = "توب-الاسبوع" # روم التوب الأسبوعي
 
 # ===== إعدادات الرولات =====
 رول_الاعضاء_الجدد = ["الأعضاء الجدد", 0x95a5a6]
 
-# رولات اللفل: لفل : [اسم الرول, كود اللون]
 رولات_اللفل = {
     1: ["مبتدئ", 0x95a5a6],
     5: ["نشيط", 0x3498db],
@@ -38,6 +39,8 @@ async def init_db():
                 user_id TEXT,
                 xp INTEGER DEFAULT 0,
                 level INTEGER DEFAULT 0,
+                weekly_xp INTEGER DEFAULT 0,
+                last_reset TEXT,
                 PRIMARY KEY (guild_id, user_id)
             )
         ''')
@@ -45,26 +48,36 @@ async def init_db():
 
 async def جلب_بيانات_العضو(guild_id, user_id):
     async with aiosqlite.connect('levels.db') as db:
-        async with db.execute('SELECT xp, level FROM levels WHERE guild_id =? AND user_id =?', (guild_id, user_id)) as cursor:
+        async with db.execute('SELECT xp, level, weekly_xp FROM levels WHERE guild_id =? AND user_id =?', (guild_id, user_id)) as cursor:
             row = await cursor.fetchone()
             if row:
-                return {"xp": row[0], "level": row[1]}
-            return {"xp": 0, "level": 0}
+                return {"xp": row[0], "level": row[1], "weekly_xp": row[2]}
+            return {"xp": 0, "level": 0, "weekly_xp": 0}
 
-async def تحديث_بيانات_العضو(guild_id, user_id, xp, level):
+async def تحديث_بيانات_العضو(guild_id, user_id, xp, level, weekly_xp):
     async with aiosqlite.connect('levels.db') as db:
         await db.execute('''
-            INSERT INTO levels (guild_id, user_id, xp, level)
-            VALUES (?,?,?,?)
+            INSERT INTO levels (guild_id, user_id, xp, level, weekly_xp, last_reset)
+            VALUES (?,?,?,?,?,?)
             ON CONFLICT(guild_id, user_id)
-            DO UPDATE SET xp =?, level =?
-        ''', (guild_id, user_id, xp, level, xp, level))
+            DO UPDATE SET xp =?, level =?, weekly_xp =?
+        ''', (guild_id, user_id, xp, level, weekly_xp, datetime.now().strftime("%Y-%m-%d"), xp, level, weekly_xp))
         await db.commit()
 
 async def جلب_التوب(guild_id, limit=10):
     async with aiosqlite.connect('levels.db') as db:
         async with db.execute('SELECT user_id, xp, level FROM levels WHERE guild_id =? ORDER BY xp DESC LIMIT?', (guild_id, limit)) as cursor:
             return await cursor.fetchall()
+
+async def جلب_توب_الاسبوع(guild_id, limit=10):
+    async with aiosqlite.connect('levels.db') as db:
+        async with db.execute('SELECT user_id, weekly_xp, level FROM levels WHERE guild_id =? AND weekly_xp > 0 ORDER BY weekly_xp DESC LIMIT?', (guild_id, limit)) as cursor:
+            return await cursor.fetchall()
+
+async def تصفير_الاسبوعي(guild_id):
+    async with aiosqlite.connect('levels.db') as db:
+        await db.execute('UPDATE levels SET weekly_xp = 0 WHERE guild_id =?', (guild_id,))
+        await db.commit()
 
 def حساب_xp_اللفل(xp):
     lvl = 0
@@ -75,7 +88,6 @@ def حساب_xp_اللفل(xp):
 def حساب_xp_للفل_التالي(lvl):
     return 50 * (lvl ** 2) + 50 * lvl
 
-# ===== دالة تحديث رول اللفل =====
 async def تحديث_رول_اللفل(member, lvl_جديد):
     رولات_للحذف = []
     for lvl, role_data in رولات_اللفل.items():
@@ -109,11 +121,45 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# ===== مهمة توب الأسبوع =====
+@tasks.loop(time=datetime.strptime("12:00", "%H:%M").time()) # الساعة 12 الظهر
+async def نشر_توب_الاسبوع():
+    # نتأكد انه يوم الجمعة
+    if datetime.now(pytz.timezone('Asia/Riyadh')).weekday()!= 4: # 4 = الجمعة
+        return
+
+    for guild in bot.guilds:
+        channel = discord.utils.get(guild.channels, name=اسم_روم_توب_الاسبوع)
+        if not channel:
+            continue
+
+        top_users = await جلب_توب_الاسبوع(str(guild.id), 10)
+        if not top_users:
+            await channel.send("مافي أحد تفاعل هذا الأسبوع 😴")
+            await تصفير_الاسبوعي(str(guild.id))
+            continue
+
+        embed = discord.Embed(title="🏆 توب 10 لهذا الأسبوع", description="أكثر 10 أشخاص جمعوا XP خلال 7 أيام", color=0xf1c40f)
+        embed.set_thumbnail(url=guild.icon.url if guild.icon else None)
+        desc = ""
+        for i, (user_id, weekly_xp, level) in enumerate(top_users, 1):
+            try:
+                user = await bot.fetch_user(int(user_id))
+                desc += f"**{i}.** {user.mention} - `{weekly_xp} XP` - لفل `{level}`\n"
+            except:
+                continue
+
+        embed.description = desc if desc else "مافي بيانات"
+        embed.set_footer(text=f"يتصفر كل يوم جمعة الساعة 12 الظهر")
+        await channel.send(embed=embed)
+        await تصفير_الاسبوعي(str(guild.id))
+
 @bot.event
 async def on_ready():
     await init_db()
     print(f'تم تسجيل الدخول باسم {bot.user}')
     await bot.change_presence(activity=discord.Game(name="!مساعدة | فلترة 24/7"))
+    نشر_توب_الاسبوع.start() # شغل مهمة التوب الأسبوعي
 
 @bot.event
 async def on_member_join(member):
@@ -165,7 +211,6 @@ async def on_message(message):
     user_id = str(message.author.id)
     guild_id = str(message.guild.id)
 
-    # كولداون دقيقة
     if user_id in كولداون_xp:
         if (datetime.utcnow() - كولداون_xp[user_id]).seconds < 60:
             pass
@@ -177,11 +222,13 @@ async def on_message(message):
         بيانات = await جلب_بيانات_العضو(guild_id, user_id)
         xp_قديم = بيانات["xp"]
         lvl_قديم = بيانات["level"]
+        weekly_xp_قديم = بيانات["weekly_xp"]
 
         xp_جديد = xp_قديم + 1
+        weekly_xp_جديد = weekly_xp_قديم + 1
         lvl_جديد = حساب_xp_اللفل(xp_جديد)
 
-        await تحديث_بيانات_العضو(guild_id, user_id, xp_جديد, lvl_جديد)
+        await تحديث_بيانات_العضو(guild_id, user_id, xp_جديد, lvl_جديد, weekly_xp_جديد)
 
         if lvl_جديد > lvl_قديم:
             channel = discord.utils.get(message.guild.channels, name=اسم_روم_اللفل)
@@ -274,6 +321,7 @@ async def يوزر(ctx, member: discord.Member = None):
     if بيانات["xp"] > 0:
         embed.add_field(name="اللفل", value=f"`{بيانات['level']}`", inline=True)
         embed.add_field(name="XP", value=f"`{بيانات['xp']}/{حساب_xp_للفل_التالي(بيانات['level'])}`", inline=True)
+        embed.add_field(name="XP الأسبوع", value=f"`{بيانات['weekly_xp']}`", inline=True)
 
     roles = [role.mention for role in member.roles if role.name!= "@everyone"]
     embed.add_field(name="الرولات", value=" ".join(roles) if roles else "لا يوجد", inline=False)
@@ -298,6 +346,7 @@ async def لفل(ctx, member: discord.Member = None):
     embed.add_field(name="اللفل", value=f"`{lvl}`", inline=True)
     embed.add_field(name="XP", value=f"`{xp}/{xp_التالي}`", inline=True)
     embed.add_field(name="باقي", value=f"`{xp_التالي - xp} XP`", inline=True)
+    embed.add_field(name="XP الأسبوع", value=f"`{بيانات['weekly_xp']}`", inline=True)
     await ctx.send(embed=embed)
 
 @bot.command(name="توب")
@@ -318,6 +367,25 @@ async def توب(ctx):
     embed.description = desc if desc else "مافي بيانات"
     await ctx.send(embed=embed)
 
+@bot.command(name="توب_اسبوع")
+async def توب_اسبوع(ctx):
+    top_users = await جلب_توب_الاسبوع(str(ctx.guild.id), 10)
+    if not top_users:
+        await ctx.send("مافي أحد تفاعل هذا الأسبوع 😴")
+        return
+
+    embed = discord.Embed(title=f"🏆 توب 10 لهذا الأسبوع", color=0xf1c40f)
+    desc = ""
+    for i, (user_id, weekly_xp, level) in enumerate(top_users, 1):
+        try:
+            user = await bot.fetch_user(int(user_id))
+            desc += f"**{i}.** {user.name} - `{weekly_xp} XP` - لفل `{level}`\n"
+        except:
+            continue
+    embed.description = desc if desc else "مافي بيانات"
+    embed.set_footer(text="يتصفر كل يوم جمعة الساعة 12 الظهر")
+    await ctx.send(embed=embed)
+
 @bot.command(name="عط")
 @commands.has_permissions(manage_messages=True)
 async def عط(ctx, member: discord.Member, amount: int):
@@ -331,11 +399,13 @@ async def عط(ctx, member: discord.Member, amount: int):
     بيانات = await جلب_بيانات_العضو(guild_id, user_id)
     xp_قديم = بيانات["xp"]
     lvl_قديم = بيانات["level"]
+    weekly_xp_قديم = بيانات["weekly_xp"]
 
     xp_جديد = xp_قديم + amount
+    weekly_xp_جديد = weekly_xp_قديم + amount
     lvl_جديد = حساب_xp_اللفل(xp_جديد)
 
-    await تحديث_بيانات_العضو(guild_id, user_id, xp_جديد, lvl_جديد)
+    await تحديث_بيانات_العضو(guild_id, user_id, xp_جديد, lvl_جديد, weekly_xp_جديد)
 
     if lvl_جديد!= lvl_قديم:
         if lvl_جديد > lvl_قديم:
@@ -375,11 +445,13 @@ async def خصم(ctx, member: discord.Member, amount: int):
 
     xp_قديم = بيانات["xp"]
     lvl_قديم = بيانات["level"]
+    weekly_xp_قديم = بيانات["weekly_xp"]
 
     xp_جديد = max(0, xp_قديم - amount)
+    weekly_xp_جديد = max(0, weekly_xp_قديم - amount)
     lvl_جديد = حساب_xp_اللفل(xp_جديد)
 
-    await تحديث_بيانات_العضو(guild_id, user_id, xp_جديد, lvl_جديد)
+    await تحديث_بيانات_العضو(guild_id, user_id, xp_جديد, lvl_جديد, weekly_xp_جديد)
 
     if lvl_جديد!= lvl_قديم:
         await تحديث_رول_اللفل(member, lvl_جديد)
@@ -501,7 +573,7 @@ async def رولات(ctx):
     embed.set_footer(text=f"العدد: {len(roles)}")
     await ctx.send(embed=embed)
 
-# ===== 6. أمر النسخة الاحتياطية الجديد =====
+# ===== 6. أمر النسخة الاحتياطية =====
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def نسخة(ctx):
@@ -515,10 +587,10 @@ async def نسخة(ctx):
 @bot.command()
 async def مساعدة(ctx):
     embed = discord.Embed(title="أوامر البوت", description="البريفكس: `!`", color=0x9b59b6)
-    embed.add_field(name="🎯 عامة", value="`هلا` `بنق` `سيرفر` `يوزر` `تحذيراتي` `رولات` `لفل` `توب`", inline=False)
+    embed.add_field(name="🎯 عامة", value="`هلا` `بنق` `سيرفر` `يوزر` `تحذيراتي` `رولات` `لفل` `توب` `توب_اسبوع`", inline=False)
     embed.add_field(name="⚙️ إدارة", value="`مسح` `ميوت` `فك` `طرد` `باند` `تحذير` `مسح_تحذيرات` `عط` `خصم` `نسخة`", inline=False)
     embed.add_field(name="👑 رولات", value="`سوي_رول` `رول` `شيل_رول`", inline=False)
-    embed.add_field(name="🛡️ تلقائي", value="رول الأعضاء الجدد + نظام XP + ترحيب + وداع + حذف السب + ميوت بعد 3 تحذيرات + لوق + ردود", inline=False)
+    embed.add_field(name="🛡️ تلقائي", value="رول الأعضاء الجدد + نظام XP + ترحيب + وداع + حذف السب + ميوت بعد 3 تحذيرات + لوق + ردود + توب أسبوعي", inline=False)
     await ctx.send(embed=embed)
 
 bot.run(TOKEN)
