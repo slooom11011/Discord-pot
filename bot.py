@@ -10,7 +10,7 @@ CFG = {
     "new_role": ["الأعضاء الجدد", 0x95a5a6], "bad_role": ["غير موثق", 0xe74c3c],
     "lvl_roles": {1: ["مبتدئ", 0x95a5a6], 5: ["نشيط", 0x3498db], 10: ["متفاعل", 0x2ecc71], 20: ["أسطورة", 0xf1c40f], 50: ["VIP", 0xe74c3c]},
     "bad_words": ["سب1", "سب2", "يا حيوان", "ياحيوان", "يا كلب", "ياكلب", "يامريض", "كس امك", "كسامك", "كل زق", "كلزق"],
-    "owner_id": 763363479960682506 # <<< حط آيدي حسابك هنا عشان النسخة التلقائية
+    "owner_id": 763363479960682506
 }
 warns, xp_cd, spam = {}, {}, {}
 
@@ -97,8 +97,8 @@ async def auto_backup():
 
 @bot.event
 async def on_ready():
-    await db_init();
-    print(f'{bot.user}');
+    await db_init()
+    print(f'{bot.user}')
     weekly_top.start()
     auto_backup.start()
 
@@ -137,7 +137,6 @@ async def on_member_remove(m):
         e.timestamp = datetime.now(timezone.utc)
         await ch.send(embed=e)
 
-# === إضافة جديدة 3: لوق الباند والطرد ===
 @bot.event
 async def on_member_ban(guild, user):
     if log:=discord.utils.get(guild.channels, name=CFG["log"]):
@@ -146,16 +145,6 @@ async def on_member_ban(guild, user):
         e.add_field(name="ID", value=f"`{user.id}`", inline=True)
         e.set_thumbnail(url=user.avatar.url if user.avatar else user.default_avatar.url)
         await log.send(embed=e)
-
-@bot.event
-async def on_member_remove(m):
-    if ch:=discord.utils.get(m.guild.channels, name=CFG["bye"]):
-        e=discord.Embed(title="💔 عضو غادرنا", description=f'**{m.name}** طلع من السيرفر\n\nالله يستر عليه وين ما راح', color=0xe74c3c)
-        e.set_thumbnail(url=m.avatar.url if m.avatar else m.default_avatar.url)
-        e.add_field(name="عدد الأعضاء الآن", value=f'`{m.guild.member_count}`', inline=True)
-        e.add_field(name="مدة البقاء", value=f'<t:{int(m.joined_at.timestamp())}:R>' if m.joined_at else "غير معروف", inline=True)
-        e.timestamp = datetime.now(timezone.utc)
-        await ch.send(embed=e)
 
 @bot.event
 async def on_message(msg):
@@ -173,7 +162,6 @@ async def on_message(msg):
     gid, uid = str(msg.guild.id), str(msg.author.id)
     if uid not in xp_cd or (datetime.now(timezone.utc)-xp_cd[uid]).seconds>=60:
         xp_cd[uid] = datetime.now(timezone.utc)
-        # === إضافة جديدة 1: XP ذكي حسب طول الرسالة ===
         xp_gain = min(len(msg.content)//10, 5) if len(msg.content) > 5 else 1
         d = await get_data(gid, uid); xp,lvl,wxp = d["xp"]+xp_gain, d["level"], d["weekly_xp"]+xp_gain
         new_lvl = calc_lvl(xp)
@@ -214,6 +202,18 @@ async def on_message(msg):
     elif msg.content.lower() == "مساء الخير": await msg.channel.send(f"مساء الورد {msg.author.mention} 🌙")
     await bot.process_commands(msg)
 
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.CommandNotFound): return
+    elif isinstance(error, commands.MissingRequiredArgument):
+        if ctx.command.name == "مسح": return await ctx.send(embed=discord.Embed(description="❌ استخدم الأمر كذا: `!مسح 10`", color=0xe74c3c), delete_after=5)
+        elif ctx.command.name == "عط": return await ctx.send(embed=discord.Embed(description="❌ استخدم الأمر كذا: `!عط @عضو 100`", color=0xe74c3c), delete_after=5)
+        elif ctx.command.name == "خصم": return await ctx.send(embed=discord.Embed(description="❌ استخدم الأمر كذا: `!خصم @عضو 100`", color=0xe74c3c), delete_after=5)
+        elif ctx.command.name == "ميوت": return await ctx.send(embed=discord.Embed(description="❌ استخدم الأمر كذا: `!ميوت @عضو 10 سبب`", color=0xe74c3c), delete_after=5)
+    elif isinstance(error, commands.MissingPermissions): return await ctx.send(embed=discord.Embed(description="❌ ما عندك صلاحية تستخدم هذا الأمر", color=0xe74c3c), delete_after=5)
+    elif isinstance(error, commands.BadArgument): return await ctx.send(embed=discord.Embed(description="❌ تأكد إنك كتبت الأمر صح", color=0xe74c3c), delete_after=5)
+    print(f"Error in {ctx.command}: {error}")
+
 @bot.command()
 async def هلا(ctx): await ctx.send(f"هلا والله {ctx.author.mention} 👋")
 
@@ -222,7 +222,6 @@ async def بنق(ctx):
     e=discord.Embed(title="🏓 البنق", description=f'**`{round(bot.latency*1000)}ms`**', color=0x2ecc71 if bot.latency<0.1 else 0xe67e22)
     await ctx.send(embed=e)
 
-# === إضافة جديدة 2: أمر سيرفر ===
 @bot.command()
 async def سيرفر(ctx):
     g = ctx.guild
@@ -232,7 +231,6 @@ async def سيرفر(ctx):
         async with db.execute('SELECT user_id,xp,level FROM levels WHERE guild_id=? ORDER BY xp DESC LIMIT 1', (str(g.id),)) as c:
             top_user = await c.fetchone()
     top_text = f"<@{top_user[0]}> لفل `{top_user[2]}`" if top_user else "لا يوجد"
-
     e=discord.Embed(title=f"📊 إحصائيات {g.name}", color=0x3498db)
     e.set_thumbnail(url=g.icon.url if g.icon else None)
     e.add_field(name="👥 الأعضاء", value=f"`{humans}`", inline=True)
@@ -342,7 +340,10 @@ async def خصم(ctx, m:discord.Member, a:int):
 
 @bot.command()
 @commands.has_permissions(manage_messages=True)
-async def مسح(ctx, n:int): await ctx.channel.purge(limit=n+1); await ctx.send(embed=discord.Embed(description=f"✅ تم مسح `{n}` رسالة", color=0x2ecc71), delete_after=3)
+async def مسح(ctx, n:int):
+    if n <= 0 or n > 100: return await ctx.send(embed=discord.Embed(description="❌ العدد لازم بين 1 و 100", color=0xe74c3c), delete_after=5)
+    await ctx.channel.purge(limit=n+1)
+    await ctx.send(embed=discord.Embed(description=f"✅ تم مسح `{n}` رسالة", color=0x2ecc71), delete_after=3)
 
 @bot.command()
 @commands.has_permissions(moderate_members=True)
@@ -405,7 +406,6 @@ async def مسح_تحذيرات(ctx, m:discord.Member):
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def نسخة(ctx):
-    """يرفع ملف levels.db كنسخة احتياطية"""
     try:
         if not os.path.exists("levels.db"):
             return await ctx.send(embed=discord.Embed(description="❌ ملف قاعدة البيانات ما انشئ لحد الحين", color=0xe74c3c))
@@ -420,7 +420,6 @@ async def نسخة(ctx):
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def استعادة(ctx):
-    """استرجع النسخة - ارفق ملف levels.db مع الأمر"""
     if not ctx.message.attachments:
         return await ctx.send(embed=discord.Embed(description="❌ لازم ترفق ملف `levels.db` مع الرسالة", color=0xe74c3c))
     attachment = ctx.message.attachments[0]
@@ -434,7 +433,6 @@ async def استعادة(ctx):
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def نسخة_خاص(ctx):
-    """يرسل نسخة احتياطية على الخاص فوراً"""
     try:
         if not os.path.exists("levels.db"):
             return await ctx.send(embed=discord.Embed(description="❌ ملف قاعدة البيانات ما انشئ لحد الحين", color=0xe74c3c))
