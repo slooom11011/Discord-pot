@@ -9,7 +9,8 @@ CFG = {
     "lvl_up": "لفل-اب", "weekly": "توب-الاسبوع",
     "new_role": ["الأعضاء الجدد", 0x95a5a6], "bad_role": ["غير موثق", 0xe74c3c],
     "lvl_roles": {1: ["مبتدئ", 0x95a5a6], 5: ["نشيط", 0x3498db], 10: ["متفاعل", 0x2ecc71], 20: ["أسطورة", 0xf1c40f], 50: ["VIP", 0xe74c3c]},
-    "bad_words": ["سب1", "سب2", "يا حيوان", "ياحيوان", "يا كلب", "ياكلب", "يامريض", "كس امك", "كسامك", "كل زق", "كلزق"]
+    "bad_words": ["سب1", "سب2", "يا حيوان", "ياحيوان", "يا كلب", "ياكلب", "يامريض", "كس امك", "كسامك", "كل زق", "كلزق"],
+    "owner_id": 763363479960682506 # <<< حط آيدي حسابك هنا عشان النسخة التلقائية
 }
 warns, xp_cd, spam = {}, {}, {}
 
@@ -81,8 +82,26 @@ async def weekly_top():
             await ch.send(embed=e)
         async with aiosqlite.connect('levels.db') as db: await db.execute('UPDATE levels SET weekly_xp=0 WHERE guild_id=?', (str(g.id),)); await db.commit()
 
+# === نسخة احتياطية تلقائية كل 12 ساعة ===
+@tasks.loop(hours=12)
+async def auto_backup():
+    if not CFG["owner_id"] or not os.path.exists("levels.db"): return
+    try:
+        user = await bot.fetch_user(CFG["owner_id"])
+        file = discord.File("levels.db")
+        e = discord.Embed(title="📦 نسخة احتياطية تلقائية", description=f"تم حفظ نسخة من قاعدة البيانات", color=0x3498db)
+        e.add_field(name="الحجم", value=f"`{os.path.getsize('levels.db')/1024:.1f} KB`", inline=True)
+        e.add_field(name="التاريخ", value=f"<t:{int(datetime.now(timezone.utc).timestamp())}:F>", inline=True)
+        e.set_footer(text="احتفظ بالملف عشان تقدر تسوي!استعادة")
+        await user.send(embed=e, file=file)
+    except Exception as err: print(f"Auto backup error: {err}")
+
 @bot.event
-async def on_ready(): await db_init(); print(f'{bot.user}'); weekly_top.start()
+async def on_ready():
+    await db_init();
+    print(f'{bot.user}');
+    weekly_top.start()
+    auto_backup.start() # تشغيل النسخ التلقائي
 
 @bot.event
 async def on_member_join(m):
@@ -329,13 +348,58 @@ async def مسح_تحذيرات(ctx, m:discord.Member):
     warns[m.id]=0
     await ctx.send(embed=discord.Embed(description=f"✅ تم مسح تحذيرات {m.mention}", color=0x2ecc71))
 
+# === أوامر النسخة الاحتياطية ===
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def نسخة(ctx):
+    """يرفع ملف levels.db كنسخة احتياطية"""
+    try:
+        if not os.path.exists("levels.db"):
+            return await ctx.send(embed=discord.Embed(description="❌ ملف قاعدة البيانات ما انشئ لحد الحين", color=0xe74c3c))
+        await ctx.send("📤 **جاري رفع النسخة الاحتياطية...**", file=discord.File("levels.db"))
+        e=discord.Embed(title="✅ تم الرفع بنجاح", description="احفظ هذا الملف عندك.\n**للاستعادة:** ارفع الملف مع أمر `!استعادة`", color=0x2ecc71)
+        e.add_field(name="حجم الملف", value=f"`{os.path.getsize('levels.db')/1024:.1f} KB`", inline=True)
+        e.add_field(name="التاريخ", value=f"<t:{int(datetime.now(timezone.utc).timestamp())}:F>", inline=True)
+        await ctx.send(embed=e)
+    except Exception as err:
+        await ctx.send(embed=discord.Embed(description=f"❌ صار خطأ: `{err}`", color=0xe74c3c))
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def استعادة(ctx):
+    """استرجع النسخة - ارفق ملف levels.db مع الأمر"""
+    if not ctx.message.attachments:
+        return await ctx.send(embed=discord.Embed(description="❌ لازم ترفق ملف `levels.db` مع الرسالة", color=0xe74c3c))
+    attachment = ctx.message.attachments[0]
+    if attachment.filename!= "levels.db":
+        return await ctx.send(embed=discord.Embed(description="❌ اسم الملف لازم يكون `levels.db` بالضبط", color=0xe74c3c))
+    await attachment.save("levels.db")
+    await ctx.send(embed=discord.Embed(title="✅ تم الاستعادة", description="تم استرجاع النسخة الاحتياطية...\n🔄 جاري إعادة تشغيل البوت الحين", color=0x2ecc71))
+    await asyncio.sleep(2)
+    await bot.close() # Railway بيشغله تلقائي
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def نسخة_خاص(ctx):
+    """يرسل نسخة احتياطية على الخاص فوراً"""
+    try:
+        if not os.path.exists("levels.db"):
+            return await ctx.send(embed=discord.Embed(description="❌ ملف قاعدة البيانات ما انشئ لحد الحين", color=0xe74c3c))
+        file = discord.File("levels.db")
+        e = discord.Embed(title="📦 نسخة احتياطية", description="هذي نسخة من قاعدة البيانات", color=0x3498db)
+        e.add_field(name="الحجم", value=f"`{os.path.getsize('levels.db')/1024:.1f} KB`", inline=True)
+        await ctx.author.send(embed=e, file=file)
+        await ctx.send(embed=discord.Embed(description="✅ تم الإرسال على الخاص", color=0x2ecc71))
+    except: await ctx.send(embed=discord.Embed(description="❌ ما قدرت أرسل على الخاص. تأكد إنك فاتح الخاص", color=0xe74c3c))
+
 @bot.command()
 async def مساعدة(ctx):
     e=discord.Embed(title="📋 أوامر البوت", description="البادئة: `!`", color=0x3498db)
     e.add_field(name="🔹 عامة", value="`هلا` `بنق` `يوزر` `تحذيراتي`", inline=False)
-    e.add_field(name="⭐ اللفل", value="`لفل` `توب` `توب_اسبوع` `عط @عضو رقم` `خصم @عضو رقم`", inline=False)
-    e.add_field(name="🛡️ الإدارة", value="`مسح` `ميوت` `فك` `طرد` `باند` `تحذير` `قفل` `فتح`", inline=False)
-    e.add_field(name="⚙️ الحماية التلقائية", value="• حذف روابط + ميوت 5د\n• منع @everyone + ميوت 10د\n• فلتر سب + 3 تحذيرات = ميوت ساعة\n• منع السبام والمنشن الجماعي", inline=False)
+    e.add_field(name="⭐ اللفل", value="`لفل` `توب_اسبوع` `عط @عضو رقم` `خصم @عضو رقم`", inline=False)
+    e.add_field(name="🛡️ الإدارة", value="`مسح` `ميوت` `فك` `طرد` `باند` `تحذير` `قفل` `فتح` `مسح_تحذيرات`", inline=False)
+    e.add_field(name="💾 النسخ الاحتياطي", value="`نسخة` `استعادة` `نسخة_خاص`", inline=False)
+    e.add_field(name="⚙️ الحماية التلقائية", value="• حذف روابط + ميوت 5د\n• منع @everyone + ميوت 10د\n• فلتر سب + 3 تحذيرات = ميوت ساعة\n• منع السبام والمنشن الجماعي\n• نسخة تلقائية كل 12 ساعة بالخاص", inline=False)
     e.set_footer(text="بوت متكامل للحماية واللفل")
     e.timestamp = datetime.now(timezone.utc)
     await ctx.send(embed=e)
