@@ -7,7 +7,7 @@ CFG = {
     "welcome": "شات-العام",
     "log": "المخالفات",
     "bye": "شات-العام",
-    "lvl_up": "لفل-اب", # تأكد اسم الروم مطابق 100%
+    "lvl_up": "لفل-اب",
     "weekly": "توب-الاسبوع",
     "rules": 1500607707806433460,
     "new_role": ["الأعضاء الجدد", 0x95a5a6],
@@ -157,12 +157,8 @@ async def on_message(msg):
         await save_data(gid,uid,xp,new_lvl,wxp)
 
         if new_lvl>lvl:
-            print(f"[LEVEL UP] {msg.author} | {lvl} -> {new_lvl}")
             ch = discord.utils.get(msg.guild.channels,name=CFG["lvl_up"])
-
-            if not ch:
-                print(f"[LEVEL UP ERROR] روم {CFG['lvl_up']} مو موجود")
-            else:
+            if ch:
                 bar,percent=progress(xp,new_lvl)
                 e=discord.Embed(title="🎉 LEVEL UP!",description=f'**{msg.author.mention}** وصل **لفل {new_lvl}** 🚀',color=0xf1c40f,timestamp=datetime.now(timezone.utc))
                 e.set_thumbnail(url=msg.author.display_avatar.url)
@@ -175,13 +171,9 @@ async def on_message(msg):
                 new_role = await update_role(msg.author,new_lvl)
                 if new_role:
                     e.add_field(name="🎊 رتبة جديدة",value=f"مبروك حصلت على {new_role.mention}",inline=False)
-                    print(f"[LEVEL UP] عطيته رول: {new_role.name}")
 
-                try:
-                    await ch.send(embed=e)
-                    print(f"[LEVEL UP] تم الارسال بروم {ch.name}")
-                except Exception as err:
-                    print(f"[LEVEL UP ERROR] ما قدرت ارسل: {err}")
+                try: await ch.send(embed=e)
+                except Exception as err: print(f"[LEVEL UP ERROR] ما قدرت ارسل: {err}")
 
     for w in CFG["bad_words"]:
         if w in msg.content.lower():
@@ -259,23 +251,63 @@ async def توب_اسبوع(ctx): e=await top_embed(ctx.guild,'SELECT user_id,we
 @commands.has_permissions(manage_messages=True)
 async def عط(ctx,m:discord.Member,a:int):
     if a<=0: return await ctx.send(embed=discord.Embed(description="❌ الكمية لازم أكبر من صفر",color=0xe74c3c))
-    d=await get_data(str(ctx.guild.id),str(m.id)); xp,lvl,wxp=d["xp"]+a,d["level"],d["weekly_xp"]+a; new_lvl=calc_lvl(xp)
-    await save_data(str(ctx.guild.id),str(m.id),xp,new_lvl,wxp)
-    if new_lvl!=lvl: await update_role(m,new_lvl)
+    gid,uid = str(ctx.guild.id),str(m.id)
+    d=await get_data(gid,uid)
+    xp,lvl,wxp=d["xp"]+a,d["level"],d["weekly_xp"]+a
+    new_lvl=calc_lvl(xp)
+    await save_data(gid,uid,xp,new_lvl,wxp)
+
     e=discord.Embed(title="✅ تم إعطاء XP",description=f"تم إعطاء {m.mention} **{a:,} XP**",color=0x2ecc71)
-    e.add_field(name="اللفل الحالي",value=f'`{new_lvl}`',inline=True); e.add_field(name="XP الكلي",value=f'`{xp:,}`',inline=True); await ctx.send(embed=e)
+    e.add_field(name="اللفل الحالي",value=f'`{new_lvl}`',inline=True)
+    e.add_field(name="XP الكلي",value=f'`{xp:,}`',inline=True)
+
+    if new_lvl!=lvl:
+        ch = discord.utils.get(ctx.guild.channels,name=CFG["lvl_up"])
+        if ch:
+            bar,percent=progress(xp,new_lvl)
+            e_lvl=discord.Embed(title="🎉 LEVEL UP!",description=f'**{m.mention}** وصل **لفل {new_lvl}** 🚀',color=0xf1c40f,timestamp=datetime.now(timezone.utc))
+            e_lvl.set_thumbnail(url=m.display_avatar.url)
+            e_lvl.add_field(name="📊 XP الحالي",value=f'`{xp:,}`',inline=True)
+            e_lvl.add_field(name="⭐ اللفل الجديد",value=f'`{new_lvl}`',inline=True)
+            e_lvl.add_field(name="🎯 لللفل الجاي",value=f'`{next_xp(new_lvl)-xp:,} XP`',inline=True)
+            e_lvl.add_field(name="التقدم",value=f'`{bar}` {percent}%',inline=False)
+            e_lvl.set_footer(text=ctx.guild.name,icon_url=ctx.guild.icon.url if ctx.guild.icon else None)
+
+            new_role = await update_role(m,new_lvl)
+            if new_role:
+                e_lvl.add_field(name="🎊 رتبة جديدة",value=f"مبروك حصلت على {new_role.mention}",inline=False)
+                e.add_field(name="🎊 رتبة جديدة",value=f"{new_role.mention}",inline=True)
+
+            try: await ch.send(embed=e_lvl)
+            except Exception as err: print(f"[LEVEL UP ERROR] ما قدرت ارسل: {err}")
+
+    await ctx.send(embed=e)
 
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def خصم(ctx,m:discord.Member,a:int):
     if a<=0: return await ctx.send(embed=discord.Embed(description="❌ الكمية لازم أكبر من صفر",color=0xe74c3c))
-    d=await get_data(str(ctx.guild.id),str(m.id))
+    gid,uid = str(ctx.guild.id),str(m.id)
+    d=await get_data(gid,uid)
     if not d["xp"]: return await ctx.send(embed=discord.Embed(description=f"❌ {m.mention} ما عنده XP أصلاً",color=0xe74c3c))
-    xp,lvl,wxp=max(0,d["xp"]-a),d["level"],max(0,d["weekly_xp"]-a); new_lvl=calc_lvl(xp)
-    await save_data(str(ctx.guild.id),str(m.id),xp,new_lvl,wxp)
-    if new_lvl!=lvl: await update_role(m,new_lvl)
+    xp,lvl,wxp=max(0,d["xp"]-a),d["level"],max(0,d["weekly_xp"]-a)
+    new_lvl=calc_lvl(xp)
+    await save_data(gid,uid,xp,new_lvl,wxp)
+
     e=discord.Embed(title="✅ تم خصم XP",description=f"تم خصم **{a:,} XP** من {m.mention}",color=0xe67e22)
-    e.add_field(name="اللفل الحالي",value=f'`{new_lvl}`',inline=True); e.add_field(name="XP الكلي",value=f'`{xp:,}`',inline=True); await ctx.send(embed=e)
+    e.add_field(name="اللفل الحالي",value=f'`{new_lvl}`',inline=True)
+    e.add_field(name="XP الكلي",value=f'`{xp:,}`',inline=True)
+
+    if new_lvl!=lvl:
+        new_role = await update_role(m,new_lvl)
+        if new_role:
+            e.add_field(name="🎭 الرتبة الحالية",value=f"{new_role.mention}",inline=True)
+        ch = discord.utils.get(ctx.guild.channels,name=CFG["lvl_up"])
+        if ch:
+            try: await ch.send(f"📉 {m.mention} نزل إلى **لفل {new_lvl}**")
+            except: pass
+
+    await ctx.send(embed=e)
 
 @bot.command()
 @commands.has_permissions(manage_messages=True)
