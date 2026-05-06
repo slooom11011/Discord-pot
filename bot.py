@@ -4,8 +4,14 @@ from datetime import datetime, timezone
 
 TOKEN = os.getenv("TOKEN")
 CFG = {
-    "welcome": "شات-العام", "log": "المخالفات", "bye": "شات-العام", "lvl_up": "لفل-اب", "weekly": "توب-الاسبوع", "rules": 1500607707806433460,
-    "new_role": ["الأعضاء الجدد", 0x95a5a6], "bad_role": ["غير موثق", 0xe74c3c],
+    "welcome": "شات-العام",
+    "log": "المخالفات",
+    "bye": "شات-العام",
+    "lvl_up": "لفل-اب", # تأكد اسم الروم مطابق 100%
+    "weekly": "توب-الاسبوع",
+    "rules": 1500607707806433460,
+    "new_role": ["الأعضاء الجدد", 0x95a5a6],
+    "bad_role": ["غير موثق", 0xe74c3c],
     "lvl_roles": {1: ["مبتدئ", 0x95a5a6], 5: ["نشيط", 0x3498db], 10: ["متفاعل", 0x2ecc71], 20: ["أسطورة", 0xf1c40f], 50: ["VIP", 0xe74c3c]},
     "bad_words": ["سب1","سب2","يا حيوان","ياحيوان","يا كلب","ياكلب","يامريض","كس امك","كسامك","كل زق","كلزق"],
     "owner_id": 763363479960682506
@@ -34,18 +40,27 @@ async def get_data(g,u):
 async def save_data(g,u,xp,lvl,wxp):
     async with await db() as c: await c.execute('INSERT INTO levels VALUES (?,?,?,?,?) ON CONFLICT(guild_id,user_id) DO UPDATE SET xp=?,level=?,weekly_xp=?',(g,u,xp,lvl,wxp,xp,lvl,wxp)); await c.commit()
 
-async def get_role(g,n,c=None): return discord.utils.get(g.roles,name=n) or await g.create_role(name=n,color=c) if c else None
+async def get_role(g,n,c=None):
+    role = discord.utils.get(g.roles,name=n)
+    if not role and c:
+        try: role = await g.create_role(name=n,color=c,reason="رول لفل تلقائي")
+        except Exception as e: print(f"[ROLE ERROR] ما قدرت اسوي رول {n}: {e}")
+    return role
 
-# عدلت هذي الدالة: صارت ترجع الرول الجديد
 async def update_role(m,lvl):
-    old_roles = [r for r in m.roles if r.name in [d[0] for d in CFG["lvl_roles"].values()]]
-    if old_roles: await m.remove_roles(*old_roles)
-    for lv,(n,c) in sorted(CFG["lvl_roles"].items(),reverse=True):
-        if lvl>=lv:
-            role = await get_role(m.guild,n,c)
-            await m.add_roles(role)
-            return role
-    return None
+    try:
+        old_roles = [r for r in m.roles if r.name in [d[0] for d in CFG["lvl_roles"].values()]]
+        if old_roles: await m.remove_roles(*old_roles,reason="تحديث رول اللفل")
+        for lv,(n,c) in sorted(CFG["lvl_roles"].items(),reverse=True):
+            if lvl>=lv:
+                role = await get_role(m.guild,n,c)
+                if role:
+                    await m.add_roles(role,reason=f"وصل لفل {lvl}")
+                    return role
+        return None
+    except Exception as e:
+        print(f"[ROLE UPDATE ERROR] {m}: {e}")
+        return None
 
 async def temp_mute(m,s,reason):
     r=await get_role(m.guild,"Muted")
@@ -57,7 +72,8 @@ async def log_send(g,title,color,**f):
         e=discord.Embed(title=title,color=color,timestamp=datetime.now(timezone.utc))
         [e.add_field(name=k,value=v,inline=i) for k,v,i in f.get("fields",[])]
         if t:=f.get("thumb"): e.set_thumbnail(url=t)
-        await ch.send(embed=e)
+        try: await ch.send(embed=e)
+        except: print(f"[LOG ERROR] ما قدرت ارسل اللوق")
 
 bot=commands.Bot(command_prefix="!",intents=discord.Intents.all())
 
@@ -88,7 +104,12 @@ async def auto_backup():
     except Exception as err: print(f"Auto backup error: {err}")
 
 @bot.event
-async def on_ready(): await db_init(); print(f'{bot.user}'); weekly_top.start(); auto_backup.start()
+async def on_ready():
+    await db_init()
+    print(f'[READY] {bot.user}')
+    print(f'[READY] روم اللفل اب: {CFG["lvl_up"]}')
+    weekly_top.start()
+    auto_backup.start()
 
 @bot.event
 async def on_member_join(m):
@@ -135,25 +156,32 @@ async def on_message(msg):
         xp,lvl,wxp=d["xp"]+xp_gain,d["level"],d["weekly_xp"]+xp_gain; new_lvl=calc_lvl(xp)
         await save_data(gid,uid,xp,new_lvl,wxp)
 
-        # عدلت هذا الجزء كامل عشان يعلن صح
         if new_lvl>lvl:
+            print(f"[LEVEL UP] {msg.author} | {lvl} -> {new_lvl}")
             ch = discord.utils.get(msg.guild.channels,name=CFG["lvl_up"])
-            if ch:
+
+            if not ch:
+                print(f"[LEVEL UP ERROR] روم {CFG['lvl_up']} مو موجود")
+            else:
                 bar,percent=progress(xp,new_lvl)
                 e=discord.Embed(title="🎉 LEVEL UP!",description=f'**{msg.author.mention}** وصل **لفل {new_lvl}** 🚀',color=0xf1c40f,timestamp=datetime.now(timezone.utc))
                 e.set_thumbnail(url=msg.author.display_avatar.url)
-                e.add_field(name="📊 XP الحالي",value=f'`{xp:,}`',inline=True); e.add_field(name="⭐ اللفل الجديد",value=f'`{new_lvl}`',inline=True)
-                e.add_field(name="🎯 لللفل الجاي",value=f'`{next_xp(new_lvl)-xp:,} XP`',inline=True); e.add_field(name="التقدم",value=f'`{bar}` {percent}%',inline=False)
+                e.add_field(name="📊 XP الحالي",value=f'`{xp:,}`',inline=True)
+                e.add_field(name="⭐ اللفل الجديد",value=f'`{new_lvl}`',inline=True)
+                e.add_field(name="🎯 لللفل الجاي",value=f'`{next_xp(new_lvl)-xp:,} XP`',inline=True)
+                e.add_field(name="التقدم",value=f'`{bar}` {percent}%',inline=False)
                 e.set_footer(text=msg.guild.name,icon_url=msg.guild.icon.url if msg.guild.icon else None)
 
                 new_role = await update_role(msg.author,new_lvl)
                 if new_role:
                     e.add_field(name="🎊 رتبة جديدة",value=f"مبروك حصلت على {new_role.mention}",inline=False)
+                    print(f"[LEVEL UP] عطيته رول: {new_role.name}")
 
-                try: await ch.send(embed=e)
-                except: print(f"ما قدرت ارسل بروم اللفل اب. تأكد من الصلاحيات")
-            else:
-                print(f"روم اللفل اب {CFG['lvl_up']} مو موجود")
+                try:
+                    await ch.send(embed=e)
+                    print(f"[LEVEL UP] تم الارسال بروم {ch.name}")
+                except Exception as err:
+                    print(f"[LEVEL UP ERROR] ما قدرت ارسل: {err}")
 
     for w in CFG["bad_words"]:
         if w in msg.content.lower():
