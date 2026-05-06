@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 TOKEN = os.getenv("TOKEN")
 CFG = {
-    "welcome": "شات-العام", "log": "المخالفات", "bye": "شات-العام", "lvl_up": "لفل-اب", "weekly": "توب-الاسبوع", "rules": 1500607707806433460,
+    "welcome": "شات-العام", "log": "المخالفات", "bye": "شات-العام", "lvl_up": "لفل-اب", "weekly": "توب-الاسبوع",
     "new_role": ["الأعضاء الجدد", 0x95a5a6], "bad_role": ["غير موثق", 0xe74c3c],
     "lvl_roles": {1: ["مبتدئ", 0x95a5a6], 5: ["نشيط", 0x3498db], 10: ["متفاعل", 0x2ecc71], 20: ["أسطورة", 0xf1c40f], 50: ["VIP", 0xe74c3c]},
     "bad_words": ["سب1","سب2","يا حيوان","ياحيوان","يا كلب","ياكلب","يامريض","كس امك","كسامك","كل زق","كلزق"],
@@ -95,8 +95,7 @@ async def on_member_join(m):
         e.set_thumbnail(url=m.avatar.url if m.avatar else m.default_avatar.url)
         e.add_field(name="رقم العضو",value=f'`#{m.guild.member_count}`',inline=True)
         e.add_field(name="تاريخ الإنضمام",value=f'<t:{int(m.joined_at.timestamp())}:R>',inline=True)
-        e.add_field(name="📜 القوانين",value=f"قبل ما تبدأ تأكد تقرأ <#{CFG['rules']}>",inline=False)
-        e.set_footer(text="حياك الله معنا")
+        e.set_footer(text="لا تنسى تقرأ القوانين 📜")
         await ch.send(embed=e)
 
 @bot.event
