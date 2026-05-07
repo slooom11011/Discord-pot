@@ -1,10 +1,9 @@
 from flask import Flask, render_template_string
-import aiosqlite, os
+import sqlite3, os
 
 app = Flask(__name__)
 DB = 'levels.db'
 
-# صفحة HTML بسيطة للوحة
 HTML = '''
 <!DOCTYPE html>
 <html dir="rtl">
@@ -14,7 +13,7 @@ HTML = '''
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         body { font-family: Tahoma; background: #2c2f33; color: white; padding: 20px; }
-       .card { background: #23272a; padding: 20px; border-radius: 8px; margin: 10px 0; }
+      .card { background: #23272a; padding: 20px; border-radius: 8px; margin: 10px 0; }
         table { width: 100%; border-collapse: collapse; }
         th, td { padding: 10px; text-align: right; border-bottom: 1px solid #444; }
         h1 { color: #7289da; }
@@ -36,9 +35,15 @@ HTML = '''
 '''
 
 @app.route('/')
-async def home():
-    async with aiosqlite.connect(DB) as c:
-        top = await (await c.execute('SELECT user_id, xp, level FROM levels ORDER BY xp DESC LIMIT 10')).fetchall()
+def home():
+    try:
+        con = sqlite3.connect(DB)
+        cur = con.cursor()
+        cur.execute('SELECT user_id, xp, level FROM levels ORDER BY xp DESC LIMIT 10')
+        top = cur.fetchall()
+        con.close()
+    except:
+        top = []
     return render_template_string(HTML, top=top)
 
 def run_dashboard():
