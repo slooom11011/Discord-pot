@@ -1,8 +1,6 @@
 import discord, os, asyncio, re, aiosqlite, pytz
 from discord.ext import commands, tasks
 from datetime import datetime, timezone, timedelta
-import threading
-from dashboard import run_dashboard
 
 TOKEN = os.getenv("TOKEN")
 CFG = {
@@ -537,6 +535,4 @@ async def مساعدة(ctx):
     e.set_footer(text="بوت متكامل للحماية واللفل والمهام")
     await ctx.send(embed=e)
 
-if __name__ == "__main__":
-    threading.Thread(target=run_dashboard).start()
-    bot.run(TOKEN)
+bot.run(TOKEN)
