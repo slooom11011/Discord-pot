@@ -140,7 +140,7 @@ async def on_member_remove(m):
    e=discord.Embed(title="💔 عضو غادرنا",description=f'**{m.name}** طلع من السيرفر',color=0xe74c3c,timestamp=datetime.now(timezone.utc));e.set_thumbnail(url=m.avatar.url if m.avatar else m.default_avatar.url);e.add_field(name="عدد الأعضاء الآن",value=f'`{m.guild.member_count}`',inline=True)
    await ch.send(embed=e)
  except:pass
-  @bot.event
+@bot.event
 async def on_member_ban(g,u):
  try:await log_send(g,"🔨 تم تبنيد عضو",0x992d22,fields=[("العضو",f"{u.mention}\n`{u.name}`",True)],thumb=u.avatar.url if u.avatar else u.default_avatar.url)
  except:pass
