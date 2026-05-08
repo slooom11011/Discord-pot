@@ -215,7 +215,11 @@ async def مهام(i:discord.Interaction):
 @bot.tree.command(name="هلا",description="يسلم عليك")
 async def هلا(i:discord.Interaction):await i.response.send_message(f"هلا والله {i.user.mention} 👋")
 @bot.tree.command(name="بنق",description="يعرض سرعة البوت")
-async def بنق(i:discord.Interaction):await i.response.send_message(embed=discord.Embed(title="🏓 البنق",description=f'**`{round(bot.latency*1000)}ms`**',color=0x2ecc71 if bot.latency<0.1 else 0xe67e22))
+async def بنق(i:discord.Interaction):
+    e=discord.Embed(title="🏓 البنق",description=f'**`{round(bot.latency*1000)}ms`**',color=0x2ecc71 if bot.latency<0.1 else 0xe67e22)
+    e.set_footer(text="تطوير Salem Eoom | © 2026")
+    await i.response.send_message(embed=e)
+
 @bot.tree.command(name="لفل",description="يعرض لفلك أو لفل عضو")
 @app_commands.describe(العضو="العضو")
 async def لفل(i:discord.Interaction,العضو:discord.Member=None):
@@ -330,6 +334,6 @@ async def مساعدة(i:discord.Interaction):
  e.add_field(name="🛡️ الإدارة",value="`/مسح` `/ميوت` `/فك` `/طرد` `/باند` `/تحذير` `/قفل` `/فتح` `/مسح_تحذيرات`",inline=False)
  e.add_field(name="💾 النسخ الاحتياطي",value="`/نسخة` `/استعادة` `/نسخة_خاص`",inline=False)
  e.add_field(name="⚙️ الحماية التلقائية",value="• XP ذكي حسب طول الرسالة\n• نظام مهام يومية + مكافآت\n• حذف روابط + ميوت 5د\n• منع @everyone + ميوت 10د\n• فلتر سب + 3 تحذيرات = ميوت ساعة\n• منع السبام والمنشن الجماعي\n• نسخة تلقائية كل 12 ساعة بالخاص\n• لوق تلقائي للباند والطرد",inline=False)
- e.set_footer(text="بوت متكامل للحماية واللفل والمهام")
+ e.set_footer(text="تطوير Salem Eoom | © 2026")
  await i.response.send_message(embed=e)
 bot.run(TOKEN)
