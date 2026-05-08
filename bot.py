@@ -18,26 +18,37 @@ def progress(xp,l,bl=10):
 _db=None
 async def get_db():
  global _db
- if _db is None: _db=await aiosqlite.connect(DB)
+ if _db is None:
+  _db = await aiosqlite.connect(DB)
  return _db
 async def db_init():
- async with await get_db() as c:await c.executescript('CREATE TABLE IF NOT EXISTS levels(guild_id TEXT,user_id TEXT,xp INTEGER DEFAULT 0,level INTEGER DEFAULT 0,weekly_xp INTEGER DEFAULT 0,PRIMARY KEY(guild_id,user_id));CREATE TABLE IF NOT EXISTS tasks(guild_id TEXT,user_id TEXT,task_id TEXT,progress INTEGER DEFAULT 0,completed INTEGER DEFAULT 0,last_reset TEXT,PRIMARY KEY(guild_id,user_id,task_id))');await c.commit()
+ db = await get_db()
+ await db.executescript('CREATE TABLE IF NOT EXISTS levels(guild_id TEXT,user_id TEXT,xp INTEGER DEFAULT 0,level INTEGER DEFAULT 0,weekly_xp INTEGER DEFAULT 0,PRIMARY KEY(guild_id,user_id));CREATE TABLE IF NOT EXISTS tasks(guild_id TEXT,user_id TEXT,task_id TEXT,progress INTEGER DEFAULT 0,completed INTEGER DEFAULT 0,last_reset TEXT,PRIMARY KEY(guild_id,user_id,task_id))')
+ await db.commit()
 async def get_data(g,u):
- async with await get_db() as c:r=await(await c.execute('SELECT xp,level,weekly_xp FROM levels WHERE guild_id=? AND user_id=?',(g,u))).fetchone()
+ db = await get_db()
+ r=await(await db.execute('SELECT xp,level,weekly_xp FROM levels WHERE guild_id=? AND user_id=?',(g,u))).fetchone()
  return {"xp":r[0],"level":r[1],"weekly_xp":r[2]} if r else {"xp":0,"level":0,"weekly_xp":0}
 async def save_data(g,u,xp,lvl,wxp):
- async with await get_db() as c:await c.execute('INSERT INTO levels VALUES(?,?,?,?,?) ON CONFLICT(guild_id,user_id)DO UPDATE SET xp=?,level=?,weekly_xp=?',(g,u,xp,lvl,wxp,xp,lvl,wxp));await c.commit()
+ db = await get_db()
+ await db.execute('INSERT INTO levels VALUES(?,?,?,?,?) ON CONFLICT(guild_id,user_id)DO UPDATE SET xp=?,level=?,weekly_xp=?',(g,u,xp,lvl,wxp,xp,lvl,wxp))
+ await db.commit()
 async def get_task(g,u,tid):
  today=datetime.now(pytz.timezone('Asia/Riyadh')).strftime('%Y-%m-%d')
- async with await get_db() as c:
-  r=await(await c.execute('SELECT progress,completed,last_reset FROM tasks WHERE guild_id=? AND user_id=? AND task_id=?',(g,u,tid))).fetchone()
-  if not r or r[2]!=today:await c.execute('INSERT INTO tasks VALUES(?,?,?,?,?,?)ON CONFLICT(guild_id,user_id,task_id)DO UPDATE SET progress=0,completed=0,last_reset=?',(g,u,tid,0,0,today,today));await c.commit();return{"progress":0,"completed":0}
-  return{"progress":r[0],"completed":r[1]}
+ db = await get_db()
+ r=await(await db.execute('SELECT progress,completed,last_reset FROM tasks WHERE guild_id=? AND user_id=? AND task_id=?',(g,u,tid))).fetchone()
+ if not r or r[2]!=today:
+  await db.execute('INSERT INTO tasks VALUES(?,?,?,?,?,?)ON CONFLICT(guild_id,user_id,task_id)DO UPDATE SET progress=0,completed=0,last_reset=?',(g,u,tid,0,0,today,today))
+  await db.commit()
+  return{"progress":0,"completed":0}
+ return{"progress":r[0],"completed":r[1]}
 async def update_task(g,u,tid,a=1):
  t=await get_task(g,u,tid)
  if t["completed"]:return False,0
  np=t["progress"]+a;goal=C["tasks"][tid]["goal"];comp=1 if np>=goal else 0;rew=C["tasks"][tid]["reward"] if comp else 0
- async with await get_db() as c:await c.execute('UPDATE tasks SET progress=?,completed=? WHERE guild_id=? AND user_id=? AND task_id=?',(min(np,goal),comp,g,u,tid));await c.commit()
+ db = await get_db()
+ await db.execute('UPDATE tasks SET progress=?,completed=? WHERE guild_id=? AND user_id=? AND task_id=?',(min(np,goal),comp,g,u,tid))
+ await db.commit()
  return comp,rew
 async def add_xp(g,u,a):
  d=await get_data(g,u);xp,lvl,wxp=d["xp"]+a,d["level"],d["weekly_xp"]+a;nlvl=calc_lvl(xp);await save_data(g,u,xp,nlvl,wxp);return nlvl>lvl,xp,nlvl
@@ -87,13 +98,15 @@ async def weekly_top():
  if datetime.now(pytz.timezone('Asia/Riyadh')).weekday()!=4:return
  for g in bot.guilds:
   if not(ch:=discord.utils.get(g.channels,name=C["weekly"])):continue
-  async with await get_db()as c:top=await(await c.execute('SELECT user_id,weekly_xp,level FROM levels WHERE guild_id=? AND weekly_xp>0 ORDER BY weekly_xp DESC LIMIT 10',(str(g.id),))).fetchall()
+  db = await get_db()
+  top=await(await db.execute('SELECT user_id,weekly_xp,level FROM levels WHERE guild_id=? AND weekly_xp>0 ORDER BY weekly_xp DESC LIMIT 10',(str(g.id),))).fetchall()
   if not top:await ch.send(embed=discord.Embed(title="😴 لا يوجد متفاعلين",description="مافي أحد جمع XP هذا الأسبوع",color=0x95a5a6));continue
   e=discord.Embed(title="🏆 توب 10 لهذا الأسبوع",color=0xf1c40f,timestamp=datetime.now(timezone.utc));e.set_thumbnail(url=g.icon.url if g.icon else None)
   medals=["🥇","🥈","🥉"];e.description="".join([f"{medals[i] if i<3 else f'**{i+1}.**'} <@{u}>\n└ `{x:,} XP` • لفل `{l}`\n\n"for i,(u,x,l)in enumerate(top)])
   await ch.send(embed=e)
-  async with await get_db()as c:await c.execute('UPDATE levels SET weekly_xp=0 WHERE guild_id=?',(str(g.id),));await c.commit()
-@tasks.loop(hours=12)
+  await db.execute('UPDATE levels SET weekly_xp=0 WHERE guild_id=?',(str(g.id),))
+  await db.commit()
+  @tasks.loop(hours=12)
 async def auto_backup():
  if not C["owner_id"]or not os.path.exists(DB):return
  try:u=await bot.fetch_user(C["owner_id"]);e=discord.Embed(title="📦 نسخة احتياطية تلقائية",color=0x3498db);e.add_field(name="الحجم",value=f"`{os.path.getsize(DB)/1024:.1f} KB`",inline=True);await u.send(embed=e,file=discord.File(DB))
@@ -213,13 +226,15 @@ async def لفل(i:discord.Interaction,العضو:discord.Member=None):
  await i.response.send_message(embed=e)
 @bot.tree.command(name="توب",description="يعرض أفضل 10 أعضاء")
 async def توب(i:discord.Interaction):
- async with await get_db()as c:top=await(await c.execute('SELECT user_id,xp,level FROM levels WHERE guild_id=? ORDER BY xp DESC LIMIT 10',(str(i.guild.id),))).fetchall()
+ db = await get_db()
+ top=await(await db.execute('SELECT user_id,xp,level FROM levels WHERE guild_id=? ORDER BY xp DESC LIMIT 10',(str(i.guild.id),))).fetchall()
  if not top:return await i.response.send_message(embed=discord.Embed(description="❌ مافي أحد عنده XP",color=0xe74c3c),ephemeral=True)
  e=discord.Embed(title=f"🏆 توب 10 في {i.guild.name}",color=0xf1c40f);e.set_thumbnail(url=i.guild.icon.url if i.guild.icon else None);medals=["🥇","🥈","🥉"];e.description="".join([f"{medals[j]if j<3 else f'**{j+1}.**'} <@{u}>\n└ لفل `{l}` • `{x:,}` XP\n\n"for j,(u,x,l)in enumerate(top)])
  await i.response.send_message(embed=e)
 @bot.tree.command(name="توب_اسبوع",description="يعرض توب الأسبوع")
 async def توب_اسبوع(i:discord.Interaction):
- async with await get_db()as c:top=await(await c.execute('SELECT user_id,weekly_xp,level FROM levels WHERE guild_id=? AND weekly_xp>0 ORDER BY weekly_xp DESC LIMIT 10',(str(i.guild.id),))).fetchall()
+ db = await get_db()
+ top=await(await db.execute('SELECT user_id,weekly_xp,level FROM levels WHERE guild_id=? AND weekly_xp>0 ORDER BY weekly_xp DESC LIMIT 10',(str(i.guild.id),))).fetchall()
  if not top:return await i.response.send_message(embed=discord.Embed(title="😴 لا يوجد متفاعلين",description="مافي أحد جمع XP هذا الأسبوع",color=0x95a5a6),ephemeral=True)
  e=discord.Embed(title="🏆 توب 10 لهذا الأسبوع",color=0xf1c40f);medals=["🥇","🥈","🥉"];e.description="".join([f"{medals[j]if j<3 else f'**{j+1}.**'} <@{u}>\n└ `{x:,}` XP • لفل `{l}`\n\n"for j,(u,x,l)in enumerate(top)])
  await i.response.send_message(embed=e)
@@ -317,5 +332,4 @@ async def مساعدة(i:discord.Interaction):
  e.add_field(name="⚙️ الحماية التلقائية",value="• XP ذكي حسب طول الرسالة\n• نظام مهام يومية + مكافآت\n• حذف روابط + ميوت 5د\n• منع @everyone + ميوت 10د\n• فلتر سب + 3 تحذيرات = ميوت ساعة\n• منع السبام والمنشن الجماعي\n• نسخة تلقائية كل 12 ساعة بالخاص\n• لوق تلقائي للباند والطرد",inline=False)
  e.set_footer(text="بوت متكامل للحماية واللفل والمهام")
  await i.response.send_message(embed=e)
-
 bot.run(TOKEN)
