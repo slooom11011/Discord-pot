@@ -18,7 +18,7 @@ def progress(xp,l,bl=10):
 _db=None
 async def get_db():
  global _db
- if _db is None:_db=await aiosqlite.connect(DB)
+ if _db is None: _db=await aiosqlite.connect(DB)
  return _db
 async def db_init():
  async with await get_db() as c:await c.executescript('CREATE TABLE IF NOT EXISTS levels(guild_id TEXT,user_id TEXT,xp INTEGER DEFAULT 0,level INTEGER DEFAULT 0,weekly_xp INTEGER DEFAULT 0,PRIMARY KEY(guild_id,user_id));CREATE TABLE IF NOT EXISTS tasks(guild_id TEXT,user_id TEXT,task_id TEXT,progress INTEGER DEFAULT 0,completed INTEGER DEFAULT 0,last_reset TEXT,PRIMARY KEY(guild_id,user_id,task_id))');await c.commit()
