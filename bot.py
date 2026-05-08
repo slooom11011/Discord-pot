@@ -111,10 +111,13 @@ async def check_voice_tasks():
  except:pass
 @bot.event
 async def on_ready():
- await db_init();print(f'[READY] {bot.user}')
- try:synced=await bot.tree.sync();print(f'تم تسجيل {len(synced)} أمر سلاش')
- except Exception as e:print(f'خطأ تسجيل السلاش: {e}')
- reset_daily_tasks.start();weekly_top.start();auto_backup.start();check_voice_tasks.start()
+    await db_init();print(f'[READY] {bot.user}')
+    try:synced=await bot.tree.sync();print(f'تم تسجيل {len(synced)} أمر سلاش')
+    except Exception as e:print(f'خطأ تسجيل السلاش: {e}')
+    if not reset_daily_tasks.is_running():reset_daily_tasks.start()
+    if not weekly_top.is_running():weekly_top.start()
+    if not auto_backup.is_running():auto_backup.start()
+    if not check_voice_tasks.is_running():check_voice_tasks.start()
 @bot.event
 async def on_member_join(m):
  try:
