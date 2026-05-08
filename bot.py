@@ -1,6 +1,7 @@
 import discord, os, asyncio, re, aiosqlite, pytz
 from discord.ext import commands, tasks
 from datetime import datetime, timezone, timedelta
+from discord import app_commands
 
 TOKEN = os.getenv("TOKEN")
 CFG = {
@@ -151,7 +152,8 @@ async def log_send(g,title,color,**f):
         try: await ch.send(embed=e)
         except Exception as e: print(f"[LOG ERROR] {e}")
 
-bot=commands.Bot(command_prefix="!",intents=discord.Intents.all())
+intents = discord.Intents.all()
+bot=commands.Bot(command_prefix="!",intents=intents)
 
 @tasks.loop(time=datetime.strptime("00:00","%H:%M").time())
 async def reset_daily_tasks():
@@ -208,6 +210,11 @@ async def check_voice_tasks():
 async def on_ready():
     await db_init()
     print(f'[READY] {bot.user}')
+    try:
+        synced = await bot.tree.sync()
+        print(f'تم تسجيل {len(synced)} أمر سلاش')
+    except Exception as e:
+        print(f'خطأ تسجيل السلاش: {e}')
     reset_daily_tasks.start()
     weekly_top.start()
     auto_backup.start()
@@ -310,27 +317,25 @@ async def on_message(msg):
                 else: await msg.channel.send(f"⚠️ {msg.author.mention} تحذير {warns[msg.author.id]}/3",delete_after=5)
                 await log_send(msg.guild,"🚫 تم حذف رسالة سيئة",0xff0000,fields=[("العضو",msg.author.mention,True),("التحذيرات",f"`{warns[msg.author.id]}/3`",True),("الكلمة المحظورة",f"||{w}||",False),("الرسالة",f"```{msg.content[:500]}```",False)]); return
 
-        if msg.content.lower()=="السلام عليكم": await msg.channel.send(f"وعليكم السلام ورحمة الله وبركاته {msg.author.mention} 🌹")
-        elif msg.content.lower()=="صباح الخير": await msg.channel.send(f"صباح النور والسرور {msg.author.mention} ☀️")
-        elif msg.content.lower()=="مساء الخير": await msg.channel.send(f"مساء الورد {msg.author.mention} 🌙")
+        # شلت الردود التلقائية هنا
         await bot.process_commands(msg)
     except Exception as e:
         print(f"[MESSAGE ERROR] {e}")
 
-@bot.event
-async def on_command_error(ctx,error):
-    if isinstance(error,commands.CommandNotFound): return
-    msgs={"مسح":"❌ استخدم الأمر كذا: `!مسح 10`","عط":"❌ استخدم الأمر كذا: `!عط @عضو 100`","خصم":"❌ استخدم الأمر كذا: `!خصم @عضو 100`","ميوت":"❌ استخدم الأمر كذا: `!ميوت @عضو 10 سبب`"}
-    if isinstance(error,commands.MissingRequiredArgument) and ctx.command.name in msgs: return await ctx.send(embed=discord.Embed(description=msgs[ctx.command.name],color=0xe74c3c),delete_after=5)
-    if isinstance(error,commands.MissingPermissions): return await ctx.send(embed=discord.Embed(description="❌ ما عندك صلاحية تستخدم هذا الأمر",color=0xe74c3c),delete_after=5)
-    if isinstance(error,commands.BadArgument): return await ctx.send(embed=discord.Embed(description="❌ تأكد إنك كتبت الأمر صح",color=0xe74c3c),delete_after=5)
-    print(f"Error in {ctx.command}: {error}")
+@bot.tree.error
+async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.MissingPermissions):
+        await interaction.response.send_message(embed=discord.Embed(description="❌ ما عندك صلاحية تستخدم هذا الأمر",color=0xe74c3c), ephemeral=True)
+    else:
+        print(f"Slash Error: {error}")
+        if not interaction.response.is_done():
+            await interaction.response.send_message(embed=discord.Embed(description="❌ صار خطأ غير متوقع",color=0xe74c3c), ephemeral=True)
 
-@bot.command()
-async def مهام(ctx):
-    gid,uid = str(ctx.guild.id),str(ctx.author.id)
+@bot.tree.command(name="مهام", description="يعرض مهامك اليومية")
+async def مهام(interaction: discord.Interaction):
+    gid,uid = str(interaction.guild.id),str(interaction.user.id)
     e=discord.Embed(title="📋 مهامك اليومية",color=0x3498db)
-    e.set_thumbnail(url=ctx.author.display_avatar.url)
+    e.set_thumbnail(url=interaction.user.display_avatar.url)
     now = datetime.now(pytz.timezone('Asia/Riyadh'))
     reset_time = now.replace(hour=0,minute=0,second=0) + timedelta(days=1)
     diff = reset_time - now
@@ -345,28 +350,31 @@ async def مهام(ctx):
         bar = "█"*percent + "░"*(10-percent)
         status = "✅" if t["completed"] else ""
         e.add_field(name=f'{data["name"]} {status}',value=f'{data["desc"]}\nالتقدم: `[{bar}] {prog}/{goal}`\nالمكافأة: `+{data["reward"]} XP`',inline=False)
-    await ctx.send(embed=e)
+    await interaction.response.send_message(embed=e, ephemeral=True)
 
-@bot.command()
-async def هلا(ctx): await ctx.send(f"هلا والله {ctx.author.mention} 👋")
+@bot.tree.command(name="هلا", description="يسلم عليك")
+async def هلا(interaction: discord.Interaction):
+    await interaction.response.send_message(f"هلا والله {interaction.user.mention} 👋")
 
-@bot.command()
-async def بنق(ctx): await ctx.send(embed=discord.Embed(title="🏓 البنق",description=f'**`{round(bot.latency*1000)}ms`**',color=0x2ecc71 if bot.latency<0.1 else 0xe67e22))
+@bot.tree.command(name="بنق", description="يعرض سرعة استجابة البوت")
+async def بنق(interaction: discord.Interaction):
+    await interaction.response.send_message(embed=discord.Embed(title="🏓 البنق",description=f'**`{round(bot.latency*1000)}ms`**',color=0x2ecc71 if bot.latency<0.1 else 0xe67e22))
 
-@bot.command()
-async def سيرفر(ctx):
-    g=ctx.guild; bots=len([m for m in g.members if m.bot]); humans=g.member_count-bots
+@bot.tree.command(name="سيرفر", description="يعرض معلومات السيرفر")
+async def سيرفر(interaction: discord.Interaction):
+    g=interaction.guild; bots=len([m for m in g.members if m.bot]); humans=g.member_count-bots
     async with await db() as c: top=await(await c.execute('SELECT user_id,xp,level FROM levels WHERE guild_id=? ORDER BY xp DESC LIMIT 1',(str(g.id),))).fetchone()
     e=discord.Embed(title=f"📊 إحصائيات {g.name}",color=0x3498db,timestamp=datetime.now(timezone.utc))
     e.set_thumbnail(url=g.icon.url if g.icon else None)
     e.add_field(name="👥 الأعضاء",value=f"`{humans}`",inline=True); e.add_field(name="🤖 البوتات",value=f"`{bots}`",inline=True); e.add_field(name="📈 الإجمالي",value=f"`{g.member_count}`",inline=True)
     e.add_field(name="👑 أعلى لفل",value=f"<@{top[0]}> لفل `{top[2]}`" if top else "لا يوجد",inline=True)
     e.add_field(name="📅 تاريخ الإنشاء",value=f"<t:{int(g.created_at.timestamp())}:R>",inline=True); e.add_field(name="🔧 البوت",value=f"`{round(bot.latency*1000)}ms`",inline=True)
-    e.set_footer(text=f"ID: {g.id}"); await ctx.send(embed=e)
+    e.set_footer(text=f"ID: {g.id}"); await interaction.response.send_message(embed=e)
 
-@bot.command()
-async def يوزر(ctx,m:discord.Member=None):
-    m=m or ctx.author; d=await get_data(str(ctx.guild.id),str(m.id))
+@bot.tree.command(name="يوزر", description="يعرض معلومات عضو")
+@app_commands.describe(العضو="العضو اللي تبي تشوف معلوماته")
+async def يوزر(interaction: discord.Interaction, العضو: discord.Member=None):
+    m=العضو or interaction.user; d=await get_data(str(interaction.guild.id),str(m.id))
     e=discord.Embed(title=f"📋 معلومات {m.name}",color=m.color if m.color.value else 0x3498db,timestamp=datetime.now(timezone.utc))
     e.set_thumbnail(url=m.avatar.url if m.avatar else m.default_avatar.url)
     e.add_field(name="👤 العضو",value=m.mention,inline=True); e.add_field(name="📅 دخل السيرفر",value=f'<t:{int(m.joined_at.timestamp())}:R>',inline=True); e.add_field(name="⚠️ التحذيرات",value=f'`{warns.get(m.id,0)}/3`',inline=True)
@@ -374,134 +382,158 @@ async def يوزر(ctx,m:discord.Member=None):
         e.add_field(name="⭐ اللفل",value=f'`{d["level"]}`',inline=True); e.add_field(name="💎 XP الكلي",value=f'`{d["xp"]:,}/{next_xp(d["level"]):,}`',inline=True); e.add_field(name="📈 XP الأسبوع",value=f'`{d["weekly_xp"]:,}`',inline=True)
         bar,percent=progress(d["xp"],d["level"]); e.add_field(name="التقدم للفل الجاي",value=f'`{bar}` {percent}%',inline=False)
     roles=[r.mention for r in m.roles if r.name!="@everyone"]; e.add_field(name="🎭 الرولات",value=" ".join(roles) if roles else "لا يوجد",inline=False)
-    e.set_footer(text=f"ID: {m.id}"); await ctx.send(embed=e)
+    e.set_footer(text=f"ID: {m.id}"); await interaction.response.send_message(embed=e)
 
-@bot.command()
-async def لفل(ctx,m:discord.Member=None):
-    m=m or ctx.author; d=await get_data(str(ctx.guild.id),str(m.id))
-    if not d["xp"]: return await ctx.send(embed=discord.Embed(description=f"❌ {m.mention} ما عنده XP لحد الحين",color=0xe74c3c))
+@bot.tree.command(name="لفل", description="يعرض لفلك أو لفل عضو")
+@app_commands.describe(العضو="العضو اللي تبي تشوف لفله")
+async def لفل(interaction: discord.Interaction, العضو: discord.Member=None):
+    m=العضو or interaction.user; d=await get_data(str(interaction.guild.id),str(m.id))
+    if not d["xp"]: return await interaction.response.send_message(embed=discord.Embed(description=f"❌ {m.mention} ما عنده XP لحد الحين",color=0xe74c3c), ephemeral=True)
     e=discord.Embed(title=f"⭐ لفل {m.display_name}",color=0x3498db); e.set_thumbnail(url=m.display_avatar.url)
     e.add_field(name="اللفل",value=f'`{d["level"]}`',inline=True); e.add_field(name="XP",value=f'`{d["xp"]:,}/{next_xp(d["level"]):,}`',inline=True); e.add_field(name="باقي",value=f'`{next_xp(d["level"])-d["xp"]:,} XP`',inline=True)
     e.add_field(name="XP الأسبوع",value=f'`{d["weekly_xp"]:,}`',inline=True); bar,percent=progress(d["xp"],d["level"],15); e.add_field(name="التقدم",value=f'`{bar}` {percent}%',inline=False)
-    e.set_footer(text=f"استخدم!توب لرؤية المتصدرين"); await ctx.send(embed=e)
+    e.set_footer(text=f"استخدم /توب لرؤية المتصدرين"); await interaction.response.send_message(embed=e)
 
-@bot.command()
-async def توب(ctx):
-    async with await db() as c: top=await(await c.execute('SELECT user_id,xp,level FROM levels WHERE guild_id=? ORDER BY xp DESC LIMIT 10',(str(ctx.guild.id),))).fetchall()
-    if not top: return await ctx.send(embed=discord.Embed(description="❌ مافي أحد عنده XP",color=0xe74c3c))
-    e=discord.Embed(title=f"🏆 توب 10 في {ctx.guild.name}",description="**أكثر 10 أعضاء جمعوا XP**",color=0xf1c40f,timestamp=datetime.now(timezone.utc))
-    e.set_thumbnail(url=ctx.guild.icon.url if ctx.guild.icon else None)
+@bot.tree.command(name="توب", description="يعرض أفضل 10 أعضاء")
+async def توب(interaction: discord.Interaction):
+    async with await db() as c: top=await(await c.execute('SELECT user_id,xp,level FROM levels WHERE guild_id=? ORDER BY xp DESC LIMIT 10',(str(interaction.guild.id),))).fetchall()
+    if not top: return await interaction.response.send_message(embed=discord.Embed(description="❌ مافي أحد عنده XP",color=0xe74c3c), ephemeral=True)
+    e=discord.Embed(title=f"🏆 توب 10 في {interaction.guild.name}",description="**أكثر 10 أعضاء جمعوا XP**",color=0xf1c40f,timestamp=datetime.now(timezone.utc))
+    e.set_thumbnail(url=interaction.guild.icon.url if interaction.guild.icon else None)
     medals=["🥇","🥈","🥉"]
     e.description="".join([f"{medals[i] if i<3 else f'**{i+1}.**'} <@{u}>\n└ لفل `{l}` • `{x:,}` XP\n\n" for i,(u,x,l) in enumerate(top)])
-    e.set_footer(text=f"استخدم!لفل @عضو لرؤية تفاصيل أي شخص")
-    await ctx.send(embed=e)
+    e.set_footer(text=f"استخدم /لفل @عضو لرؤية تفاصيل أي شخص")
+    await interaction.response.send_message(embed=e)
 
-@bot.command(name="توب_اسبوع")
-async def توب_اسبوع(ctx):
-    async with await db() as c: top=await(await c.execute('SELECT user_id,weekly_xp,level FROM levels WHERE guild_id=? AND weekly_xp>0 ORDER BY weekly_xp DESC LIMIT 10',(str(ctx.guild.id),))).fetchall()
-    if not top: return await ctx.send(embed=discord.Embed(title="😴 لا يوجد متفاعلين",description="مافي أحد جمع XP هذا الأسبوع",color=0x95a5a6))
+@bot.tree.command(name="توب_اسبوع", description="يعرض توب الأسبوع")
+async def توب_اسبوع(interaction: discord.Interaction):
+    async with await db() as c: top=await(await c.execute('SELECT user_id,weekly_xp,level FROM levels WHERE guild_id=? AND weekly_xp>0 ORDER BY weekly_xp DESC LIMIT 10',(str(interaction.guild.id),))).fetchall()
+    if not top: return await interaction.response.send_message(embed=discord.Embed(title="😴 لا يوجد متفاعلين",description="مافي أحد جمع XP هذا الأسبوع",color=0x95a5a6), ephemeral=True)
     e=discord.Embed(title="🏆 توب 10 لهذا الأسبوع",description="**أكثر 10 أعضاء تفاعلاً خلال 7 أيام**",color=0xf1c40f,timestamp=datetime.now(timezone.utc))
-    e.set_thumbnail(url=ctx.guild.icon.url if ctx.guild.icon else None)
+    e.set_thumbnail(url=interaction.guild.icon.url if interaction.guild.icon else None)
     medals=["🥇","🥈","🥉"]
     e.description="".join([f"{medals[i] if i<3 else f'**{i+1}.**'} <@{u}>\n└ `{x:,}` XP • لفل `{l}`\n\n" for i,(u,x,l) in enumerate(top)])
     e.set_footer(text="يتصفر كل جمعة الساعة 12 ظهراً")
-    await ctx.send(embed=e)
+    await interaction.response.send_message(embed=e)
 
-@bot.command()
-@commands.has_permissions(manage_messages=True)
-async def عط(ctx,m:discord.Member,a:int):
-    if a<=0: return await ctx.send(embed=discord.Embed(description="❌ الكمية لازم أكبر من صفر",color=0xe74c3c))
-    gid,uid = str(ctx.guild.id),str(m.id)
-    leveled,xp,new_lvl = await add_xp(gid,uid,a)
-    e=discord.Embed(title="✅ تم إعطاء XP",description=f"تم إعطاء {m.mention} **{a:,} XP**",color=0x2ecc71)
+@bot.tree.command(name="عط", description="يعطي XP لعضو")
+@app_commands.checks.has_permissions(manage_messages=True)
+@app_commands.describe(العضو="العضو اللي تعطيه", الكمية="كم XP تعطيه")
+async def عط(interaction: discord.Interaction, العضو: discord.Member, الكمية: int):
+    if الكمية<=0: return await interaction.response.send_message(embed=discord.Embed(description="❌ الكمية لازم أكبر من صفر",color=0xe74c3c), ephemeral=True)
+    gid,uid = str(interaction.guild.id),str(العضو.id)
+    leveled,xp,new_lvl = await add_xp(gid,uid,الكمية)
+    e=discord.Embed(title="✅ تم إعطاء XP",description=f"تم إعطاء {العضو.mention} **{الكمية:,} XP**",color=0x2ecc71)
     e.add_field(name="اللفل الحالي",value=f'`{new_lvl}`',inline=True)
     e.add_field(name="XP الكلي",value=f'`{xp:,}`',inline=True)
     if leveled:
-        await announce_level_up(m,xp,new_lvl)
-        role = await update_role(m,new_lvl)
+        await announce_level_up(العضو,xp,new_lvl)
+        role = await update_role(العضو,new_lvl)
         if role: e.add_field(name="🎊 رتبة جديدة",value=f"{role.mention}",inline=True)
-    await ctx.send(embed=e)
+    await interaction.response.send_message(embed=e)
 
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def خصم(ctx,m:discord.Member,a:int):
-    if a<=0: return await ctx.send(embed=discord.Embed(description="❌ الكمية لازم أكبر من صفر",color=0xe74c3c))
-    gid,uid = str(ctx.guild.id),str(m.id)
+@bot.tree.command(name="خصم", description="يخصم XP من عضو")
+@app_commands.checks.has_permissions(administrator=True)
+@app_commands.describe(العضو="العضو اللي تخصم منه", الكمية="كم XP تخصم")
+async def خصم(interaction: discord.Interaction, العضو: discord.Member, الكمية: int):
+    if الكمية<=0: return await interaction.response.send_message(embed=discord.Embed(description="❌ الكمية لازم أكبر من صفر",color=0xe74c3c), ephemeral=True)
+    gid,uid = str(interaction.guild.id),str(العضو.id)
     d=await get_data(gid,uid)
-    if not d["xp"]: return await ctx.send(embed=discord.Embed(description=f"❌ {m.mention} ما عنده XP أصلاً",color=0xe74c3c))
-    xp = max(0,d["xp"]-a)
-    wxp = max(0,d["weekly_xp"]-a)
+    if not d["xp"]: return await interaction.response.send_message(embed=discord.Embed(description=f"❌ {العضو.mention} ما عنده XP أصلاً",color=0xe74c3c), ephemeral=True)
+    xp = max(0,d["xp"]-الكمية)
+    wxp = max(0,d["weekly_xp"]-الكمية)
     new_lvl = calc_lvl(xp)
     await save_data(gid,uid,xp,new_lvl,wxp)
-    if new_lvl!=d["level"]: await update_role(m,new_lvl)
-    e=discord.Embed(title="✅ تم خصم XP",description=f"تم خصم **{a:,} XP** من {m.mention}",color=0xe67e22)
+    if new_lvl!=d["level"]: await update_role(العضو,new_lvl)
+    e=discord.Embed(title="✅ تم خصم XP",description=f"تم خصم **{الكمية:,} XP** من {العضو.mention}",color=0xe67e22)
     e.add_field(name="اللفل الحالي",value=f'`{new_lvl}`',inline=True)
     e.add_field(name="XP الكلي",value=f'`{xp:,}`',inline=True)
-    await ctx.send(embed=e)
+    await interaction.response.send_message(embed=e)
 
-@bot.command()
-@commands.has_permissions(manage_messages=True)
-async def مسح(ctx,n:int):
-    if not 0<n<=100: return await ctx.send(embed=discord.Embed(description="❌ العدد لازم بين 1 و 100",color=0xe74c3c),delete_after=5)
-    await ctx.channel.purge(limit=n+1); await ctx.send(embed=discord.Embed(description=f"✅ تم مسح `{n}` رسالة",color=0x2ecc71),delete_after=3)
+@bot.tree.command(name="مسح", description="يمسح رسائل")
+@app_commands.checks.has_permissions(manage_messages=True)
+@app_commands.describe(العدد="عدد الرسائل 1-100")
+async def مسح(interaction: discord.Interaction, العدد: int):
+    if not 0<العدد<=100: return await interaction.response.send_message(embed=discord.Embed(description="❌ العدد لازم بين 1 و 100",color=0xe74c3c), ephemeral=True)
+    await interaction.response.defer(ephemeral=True)
+    deleted = await interaction.channel.purge(limit=العدد)
+    await interaction.followup.send(embed=discord.Embed(description=f"✅ تم مسح `{len(deleted)}` رسالة",color=0x2ecc71), ephemeral=True)
 
-@bot.command()
-@commands.has_permissions(moderate_members=True)
-async def ميوت(ctx,m:discord.Member,t:int,*,reason="مافي سبب"): await temp_mute(m,t*60,reason); await ctx.send(embed=discord.Embed(title="🔇 تم إعطاء ميوت",description=f"{m.mention} لمدة `{t}` دقيقة\n**السبب:** {reason}",color=0xe74c3c))
+@bot.tree.command(name="ميوت", description="يعطي ميوت لعضو")
+@app_commands.checks.has_permissions(moderate_members=True)
+@app_commands.describe(العضو="العضو", الدقائق="مدة الميوت بالدقائق", السبب="سبب الميوت")
+async def ميوت(interaction: discord.Interaction, العضو: discord.Member, الدقائق: int, السبب: str="مافي سبب"):
+    await temp_mute(العضو,الدقائق*60,السبب)
+    await interaction.response.send_message(embed=discord.Embed(title="🔇 تم إعطاء ميوت",description=f"{العضو.mention} لمدة `{الدقائق}` دقيقة\n**السبب:** {السبب}",color=0xe74c3c))
 
-@bot.command()
-@commands.has_permissions(moderate_members=True)
-async def فك(ctx,m:discord.Member):
-    if r:=discord.utils.get(ctx.guild.roles,name="Muted"): await m.remove_roles(r)
-    await ctx.send(embed=discord.Embed(description=f"✅ تم فك الميوت عن {m.mention}",color=0x2ecc71))
+@bot.tree.command(name="فك", description="يفك الميوت عن عضو")
+@app_commands.checks.has_permissions(moderate_members=True)
+@app_commands.describe(العضو="العضو")
+async def فك(interaction: discord.Interaction, العضو: discord.Member):
+    if r:=discord.utils.get(interaction.guild.roles,name="Muted"): await
+        @bot.tree.command(name="فك", description="يفك الميوت عن عضو")
+@app_commands.checks.has_permissions(moderate_members=True)
+@app_commands.describe(العضو="العضو")
+async def فك(interaction: discord.Interaction, العضو: discord.Member):
+    if r:=discord.utils.get(interaction.guild.roles,name="Muted"): await العضو.remove_roles(r)
+    await interaction.response.send_message(embed=discord.Embed(description=f"✅ تم فك الميوت عن {العضو.mention}",color=0x2ecc71))
 
-@bot.command()
-@commands.has_permissions(kick_members=True)
-async def طرد(ctx,m:discord.Member,*,reason="مافي سبب"):
-    await m.kick(reason=reason)
-    await log_send(ctx.guild,"👢 تم طرد عضو",0xe74c3c,fields=[("العضو",f"{m.mention}\n`{m.name}`",True),("المشرف",ctx.author.mention,True),("السبب",reason,False)])
-    await ctx.send(embed=discord.Embed(description=f"👢 تم طرد {m.mention}\n**السبب:** {reason}",color=0xe74c3c))
+@bot.tree.command(name="طرد", description="يطرد عضو من السيرفر")
+@app_commands.checks.has_permissions(kick_members=True)
+@app_commands.describe(العضو="العضو اللي تطرده", السبب="سبب الطرد")
+async def طرد(interaction: discord.Interaction, العضو: discord.Member, السبب: str="مافي سبب"):
+    await العضو.kick(reason=السبب)
+    await log_send(interaction.guild,"👢 تم طرد عضو",0xe74c3c,fields=[("العضو",f"{العضو.mention}\n`{العضو.name}`",True),("المشرف",interaction.user.mention,True),("السبب",السبب,False)])
+    await interaction.response.send_message(embed=discord.Embed(description=f"👢 تم طرد {العضو.mention}\n**السبب:** {السبب}",color=0xe74c3c))
 
-@bot.command()
-@commands.has_permissions(ban_members=True)
-async def باند(ctx,m:discord.Member,*,reason="مافي سبب"): await m.ban(reason=reason); await ctx.send(embed=discord.Embed(description=f"🔨 تم تبنيد {m.mention}\n**السبب:** {reason}",color=0x992d22))
+@bot.tree.command(name="باند", description="يبند عضو من السيرفر")
+@app_commands.checks.has_permissions(ban_members=True)
+@app_commands.describe(العضو="العضو اللي تبنده", السبب="سبب الباند")
+async def باند(interaction: discord.Interaction, العضو: discord.Member, السبب: str="مافي سبب"): 
+    await العضو.ban(reason=السبب)
+    await interaction.response.send_message(embed=discord.Embed(description=f"🔨 تم تبنيد {العضو.mention}\n**السبب:** {السبب}",color=0x992d22))
 
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def قفل(ctx):
-    [await ch.set_permissions(ctx.guild.default_role,send_messages=False) for ch in ctx.guild.text_channels]
-    await ctx.send(embed=discord.Embed(title="🔒 تم قفل السيرفر",description="للفتح استخدم `!فتح`",color=0xe74c3c))
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def فتح(ctx):
-    [await ch.set_permissions(ctx.guild.default_role,send_messages=True) for ch in ctx.guild.text_channels]
-    await ctx.send(embed=discord.Embed(title="🔓 تم فتح السيرفر",color=0x2ecc71))
+@bot.tree.command(name="قفل", description="يقفل كل رومات السيرفر")
+@app_commands.checks.has_permissions(administrator=True)
+async def قفل(interaction: discord.Interaction):
+    await interaction.response.defer()
+    [await ch.set_permissions(interaction.guild.default_role,send_messages=False) for ch in interaction.guild.text_channels]
+    await interaction.followup.send(embed=discord.Embed(title="🔒 تم قفل السيرفر",description="للفتح استخدم `/فتح`",color=0xe74c3c))
 
-@bot.command()
-@commands.has_permissions(kick_members=True)
-async def تحذير(ctx,m:discord.Member,*,reason="مافي سبب"):
-    warns[m.id]=warns.get(m.id,0)+1
-    await ctx.send(embed=discord.Embed(description=f"⚠️ تم تحذير {m.mention} | `{warns[m.id]}/3`\n**السبب:** {reason}",color=0xe67e22))
-    await log_send(ctx.guild,"⚠️ تم تحذير عضو",0xe67e22,fields=[("العضو",m.mention,True),("المشرف",ctx.author.mention,True),("التحذيرات",f"`{warns[m.id]}/3`",True),("السبب",reason,False)])
-    if warns[m.id]>=3:
-        await temp_mute(m,3600,"وصل 3 تحذيرات")
-        warns[m.id]=0
-        await ctx.send(f"🔇 {m.mention} ميوت ساعة بسبب 3 تحذيرات")
+@bot.tree.command(name="فتح", description="يفتح كل رومات السيرفر")
+@app_commands.checks.has_permissions(administrator=True)
+async def فتح(interaction: discord.Interaction):
+    await interaction.response.defer()
+    [await ch.set_permissions(interaction.guild.default_role,send_messages=True) for ch in interaction.guild.text_channels]
+    await interaction.followup.send(embed=discord.Embed(title="🔓 تم فتح السيرفر",color=0x2ecc71))
 
-@bot.command()
-async def تحذيراتي(ctx):
-    await ctx.send(embed=discord.Embed(description=f"⚠️ عندك `{warns.get(ctx.author.id,0)}/3` تحذير",color=0xe67e22))
+@bot.tree.command(name="تحذير", description="يعطي تحذير لعضو")
+@app_commands.checks.has_permissions(kick_members=True)
+@app_commands.describe(العضو="العضو", السبب="سبب التحذير")
+async def تحذير(interaction: discord.Interaction, العضو: discord.Member, السبب: str="مافي سبب"):
+    warns[العضو.id]=warns.get(العضو.id,0)+1
+    await interaction.response.send_message(embed=discord.Embed(description=f"⚠️ تم تحذير {العضو.mention} | `{warns[العضو.id]}/3`\n**السبب:** {السبب}",color=0xe67e22))
+    await log_send(interaction.guild,"⚠️ تم تحذير عضو",0xe67e22,fields=[("العضو",العضو.mention,True),("المشرف",interaction.user.mention,True),("التحذيرات",f"`{warns[العضو.id]}/3`",True),("السبب",السبب,False)])
+    if warns[العضو.id]>=3:
+        await temp_mute(العضو,3600,"وصل 3 تحذيرات")
+        warns[العضو.id]=0
+        await interaction.followup.send(f"🔇 {العضو.mention} ميوت ساعة بسبب 3 تحذيرات")
 
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def مسح_تحذيرات(ctx,m:discord.Member):
-    warns[m.id]=0
-    await ctx.send(embed=discord.Embed(description=f"✅ تم مسح تحذيرات {m.mention}",color=0x2ecc71))
+@bot.tree.command(name="تحذيراتي", description="يعرض عدد تحذيراتك")
+async def تحذيراتي(interaction: discord.Interaction):
+    await interaction.response.send_message(embed=discord.Embed(description=f"⚠️ عندك `{warns.get(interaction.user.id,0)}/3` تحذير",color=0xe67e22), ephemeral=True)
+
+@bot.tree.command(name="مسح_تحذيرات", description="يمسح تحذيرات عضو")
+@app_commands.checks.has_permissions(administrator=True)
+@app_commands.describe(العضو="العضو")
+async def مسح_تحذيرات(interaction: discord.Interaction, العضو: discord.Member):
+    warns[العضو.id]=0
+    await interaction.response.send_message(embed=discord.Embed(description=f"✅ تم مسح تحذيرات {العضو.mention}",color=0x2ecc71))
 
 async def send_backup(dest,is_dm=False):
     try:
         if not os.path.exists(DB): return await dest.send(embed=discord.Embed(description="❌ ملف قاعدة البيانات ما انشئ لحد الحين",color=0xe74c3c))
-        e=discord.Embed(title="📦 نسخة احتياطية",description="هذي نسخة من قاعدة البيانات" if is_dm else "احفظ هذا الملف عندك.\n**للاستعادة:** ارفع الملف مع أمر `!استعادة`",color=0x3498db)
+        e=discord.Embed(title="📦 نسخة احتياطية",description="هذي نسخة من قاعدة البيانات" if is_dm else "احفظ هذا الملف عندك.\n**للاستعادة:** ارفع الملف مع أمر `/استعادة`",color=0x3498db)
         e.add_field(name="الحجم",value=f"`{os.path.getsize(DB)/1024:.1f} KB`",inline=True)
         if not is_dm: e.add_field(name="التاريخ",value=f"<t:{int(datetime.now(timezone.utc).timestamp())}:F>",inline=True)
         await dest.send(embed=e,file=discord.File(DB))
@@ -509,30 +541,39 @@ async def send_backup(dest,is_dm=False):
     except Exception as err:
         await dest.send(embed=discord.Embed(description=f"❌ صار خطأ: {err}",color=0xe74c3c))
 
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def نسخة(ctx): await ctx.send("📤 **جاري رفع النسخة الاحتياطية...**"); await send_backup(ctx)
+@bot.tree.command(name="نسخة", description="يرسل نسخة احتياطية هنا")
+@app_commands.checks.has_permissions(administrator=True)
+async def نسخة(interaction: discord.Interaction): 
+    await interaction.response.send_message("📤 **جاري رفع النسخة الاحتياطية...**")
+    await send_backup(interaction.channel)
 
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def استعادة(ctx):
-    if not ctx.message.attachments or ctx.message.attachments[0].filename!="levels.db": return await ctx.send(embed=discord.Embed(description="❌ لازم ترفق ملف `levels.db` مع الرسالة" if not ctx.message.attachments else "❌ اسم الملف لازم يكون `levels.db` بالضبط",color=0xe74c3c))
-    await ctx.message.attachments[0].save(DB); await ctx.send(embed=discord.Embed(title="✅ تم الاستعادة",description="تم استرجاع النسخة الاحتياطية...\n🔄 جاري إعادة تشغيل البوت الحين",color=0x2ecc71)); await asyncio.sleep(2); await bot.close()
+@bot.tree.command(name="استعادة", description="يستعيد نسخة احتياطية")
+@app_commands.checks.has_permissions(administrator=True)
+@app_commands.describe(ملف="ارفع ملف levels.db")
+async def استعادة(interaction: discord.Interaction, ملف: discord.Attachment):
+    if ملف.filename!="levels.db": 
+        return await interaction.response.send_message(embed=discord.Embed(description="❌ اسم الملف لازم يكون `levels.db` بالضبط",color=0xe74c3c), ephemeral=True)
+    await ملف.save(DB)
+    await interaction.response.send_message(embed=discord.Embed(title="✅ تم الاستعادة",description="تم استرجاع النسخة الاحتياطية...\n🔄 جاري إعادة تشغيل البوت الحين",color=0x2ecc71))
+    await asyncio.sleep(2)
+    await bot.close()
 
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def نسخة_خاص(ctx): await send_backup(ctx.author,is_dm=True)
+@bot.tree.command(name="نسخة_خاص", description="يرسل لك نسخة احتياطية على الخاص")
+@app_commands.checks.has_permissions(administrator=True)
+async def نسخة_خاص(interaction: discord.Interaction): 
+    await interaction.response.send_message("📤 جاري الإرسال...", ephemeral=True)
+    await send_backup(interaction.user,is_dm=True)
 
-@bot.command()
-async def مساعدة(ctx):
-    e=discord.Embed(title="📋 أوامر البوت",description="البادئة: `!`",color=0x3498db,timestamp=datetime.now(timezone.utc))
-    e.add_field(name="🔹 عامة",value="`هلا` `بنق` `يوزر` `سيرفر` `تحذيراتي` `لفل` `مهام`",inline=False)
-    e.add_field(name="🏆 اللفل والتوب",value="`توب` `توب_اسبوع`",inline=False)
-    e.add_field(name="⭐ إدارة XP",value="`عط @عضو رقم` `خصم @عضو رقم`",inline=False)
-    e.add_field(name="🛡️ الإدارة",value="`مسح` `ميوت` `فك` `طرد` `باند` `تحذير` `قفل` `فتح` `مسح_تحذيرات`",inline=False)
-    e.add_field(name="💾 النسخ الاحتياطي",value="`نسخة` `استعادة` `نسخة_خاص`",inline=False)
+@bot.tree.command(name="مساعدة", description="يعرض كل أوامر البوت")
+async def مساعدة(interaction: discord.Interaction):
+    e=discord.Embed(title="📋 أوامر البوت",description="كل الأوامر الآن سلاش `/`",color=0x3498db,timestamp=datetime.now(timezone.utc))
+    e.add_field(name="🔹 عامة",value="`/هلا` `/بنق` `/يوزر` `/سيرفر` `/تحذيراتي` `/لفل` `/مهام`",inline=False)
+    e.add_field(name="🏆 اللفل والتوب",value="`/توب` `/توب_اسبوع`",inline=False)
+    e.add_field(name="⭐ إدارة XP",value="`/عط` `/خصم`",inline=False)
+    e.add_field(name="🛡️ الإدارة",value="`/مسح` `/ميوت` `/فك` `/طرد` `/باند` `/تحذير` `/قفل` `/فتح` `/مسح_تحذيرات`",inline=False)
+    e.add_field(name="💾 النسخ الاحتياطي",value="`/نسخة` `/استعادة` `/نسخة_خاص`",inline=False)
     e.add_field(name="⚙️ الحماية التلقائية",value="• XP ذكي حسب طول الرسالة\n• نظام مهام يومية + مكافآت\n• حذف روابط + ميوت 5د\n• منع @everyone + ميوت 10د\n• فلتر سب + 3 تحذيرات = ميوت ساعة\n• منع السبام والمنشن الجماعي\n• نسخة تلقائية كل 12 ساعة بالخاص\n• لوق تلقائي للباند والطرد",inline=False)
     e.set_footer(text="بوت متكامل للحماية واللفل والمهام")
-    await ctx.send(embed=e)
+    await interaction.response.send_message(embed=e)
 
 bot.run(TOKEN)
