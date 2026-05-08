@@ -15,17 +15,21 @@ def progress(xp,l,bl=10):
  if need<=0:need=1
  prog=min(int((have/need)*bl),bl)
  return "█"*prog+"░"*(bl-prog),min(int((have/need)*100),100)
-db=lambda:aiosqlite.connect(DB)
+_db=None
+async def get_db():
+ global _db
+ if _db is None:_db=await aiosqlite.connect(DB)
+ return _db
 async def db_init():
- async with await db() as c:await c.executescript('CREATE TABLE IF NOT EXISTS levels(guild_id TEXT,user_id TEXT,xp INTEGER DEFAULT 0,level INTEGER DEFAULT 0,weekly_xp INTEGER DEFAULT 0,PRIMARY KEY(guild_id,user_id));CREATE TABLE IF NOT EXISTS tasks(guild_id TEXT,user_id TEXT,task_id TEXT,progress INTEGER DEFAULT 0,completed INTEGER DEFAULT 0,last_reset TEXT,PRIMARY KEY(guild_id,user_id,task_id))');await c.commit()
+ async with await get_db() as c:await c.executescript('CREATE TABLE IF NOT EXISTS levels(guild_id TEXT,user_id TEXT,xp INTEGER DEFAULT 0,level INTEGER DEFAULT 0,weekly_xp INTEGER DEFAULT 0,PRIMARY KEY(guild_id,user_id));CREATE TABLE IF NOT EXISTS tasks(guild_id TEXT,user_id TEXT,task_id TEXT,progress INTEGER DEFAULT 0,completed INTEGER DEFAULT 0,last_reset TEXT,PRIMARY KEY(guild_id,user_id,task_id))');await c.commit()
 async def get_data(g,u):
- async with await db() as c:r=await(await c.execute('SELECT xp,level,weekly_xp FROM levels WHERE guild_id=? AND user_id=?',(g,u))).fetchone()
+ async with await get_db() as c:r=await(await c.execute('SELECT xp,level,weekly_xp FROM levels WHERE guild_id=? AND user_id=?',(g,u))).fetchone()
  return {"xp":r[0],"level":r[1],"weekly_xp":r[2]} if r else {"xp":0,"level":0,"weekly_xp":0}
 async def save_data(g,u,xp,lvl,wxp):
- async with await db() as c:await c.execute('INSERT INTO levels VALUES(?,?,?,?,?) ON CONFLICT(guild_id,user_id)DO UPDATE SET xp=?,level=?,weekly_xp=?',(g,u,xp,lvl,wxp,xp,lvl,wxp));await c.commit()
+ async with await get_db() as c:await c.execute('INSERT INTO levels VALUES(?,?,?,?,?) ON CONFLICT(guild_id,user_id)DO UPDATE SET xp=?,level=?,weekly_xp=?',(g,u,xp,lvl,wxp,xp,lvl,wxp));await c.commit()
 async def get_task(g,u,tid):
  today=datetime.now(pytz.timezone('Asia/Riyadh')).strftime('%Y-%m-%d')
- async with await db() as c:
+ async with await get_db() as c:
   r=await(await c.execute('SELECT progress,completed,last_reset FROM tasks WHERE guild_id=? AND user_id=? AND task_id=?',(g,u,tid))).fetchone()
   if not r or r[2]!=today:await c.execute('INSERT INTO tasks VALUES(?,?,?,?,?,?)ON CONFLICT(guild_id,user_id,task_id)DO UPDATE SET progress=0,completed=0,last_reset=?',(g,u,tid,0,0,today,today));await c.commit();return{"progress":0,"completed":0}
   return{"progress":r[0],"completed":r[1]}
@@ -33,7 +37,7 @@ async def update_task(g,u,tid,a=1):
  t=await get_task(g,u,tid)
  if t["completed"]:return False,0
  np=t["progress"]+a;goal=C["tasks"][tid]["goal"];comp=1 if np>=goal else 0;rew=C["tasks"][tid]["reward"] if comp else 0
- async with await db() as c:await c.execute('UPDATE tasks SET progress=?,completed=? WHERE guild_id=? AND user_id=? AND task_id=?',(min(np,goal),comp,g,u,tid));await c.commit()
+ async with await get_db() as c:await c.execute('UPDATE tasks SET progress=?,completed=? WHERE guild_id=? AND user_id=? AND task_id=?',(min(np,goal),comp,g,u,tid));await c.commit()
  return comp,rew
 async def add_xp(g,u,a):
  d=await get_data(g,u);xp,lvl,wxp=d["xp"]+a,d["level"],d["weekly_xp"]+a;nlvl=calc_lvl(xp);await save_data(g,u,xp,nlvl,wxp);return nlvl>lvl,xp,nlvl
@@ -83,12 +87,12 @@ async def weekly_top():
  if datetime.now(pytz.timezone('Asia/Riyadh')).weekday()!=4:return
  for g in bot.guilds:
   if not(ch:=discord.utils.get(g.channels,name=C["weekly"])):continue
-  async with await db()as c:top=await(await c.execute('SELECT user_id,weekly_xp,level FROM levels WHERE guild_id=? AND weekly_xp>0 ORDER BY weekly_xp DESC LIMIT 10',(str(g.id),))).fetchall()
+  async with await get_db()as c:top=await(await c.execute('SELECT user_id,weekly_xp,level FROM levels WHERE guild_id=? AND weekly_xp>0 ORDER BY weekly_xp DESC LIMIT 10',(str(g.id),))).fetchall()
   if not top:await ch.send(embed=discord.Embed(title="😴 لا يوجد متفاعلين",description="مافي أحد جمع XP هذا الأسبوع",color=0x95a5a6));continue
   e=discord.Embed(title="🏆 توب 10 لهذا الأسبوع",color=0xf1c40f,timestamp=datetime.now(timezone.utc));e.set_thumbnail(url=g.icon.url if g.icon else None)
   medals=["🥇","🥈","🥉"];e.description="".join([f"{medals[i] if i<3 else f'**{i+1}.**'} <@{u}>\n└ `{x:,} XP` • لفل `{l}`\n\n"for i,(u,x,l)in enumerate(top)])
   await ch.send(embed=e)
-  async with await db()as c:await c.execute('UPDATE levels SET weekly_xp=0 WHERE guild_id=?',(str(g.id),));await c.commit()
+  async with await get_db()as c:await c.execute('UPDATE levels SET weekly_xp=0 WHERE guild_id=?',(str(g.id),));await c.commit()
 @tasks.loop(hours=12)
 async def auto_backup():
  if not C["owner_id"]or not os.path.exists(DB):return
@@ -111,13 +115,13 @@ async def check_voice_tasks():
  except:pass
 @bot.event
 async def on_ready():
-    await db_init();print(f'[READY] {bot.user}')
-    try:synced=await bot.tree.sync();print(f'تم تسجيل {len(synced)} أمر سلاش')
-    except Exception as e:print(f'خطأ تسجيل السلاش: {e}')
-    if not reset_daily_tasks.is_running():reset_daily_tasks.start()
-    if not weekly_top.is_running():weekly_top.start()
-    if not auto_backup.is_running():auto_backup.start()
-    if not check_voice_tasks.is_running():check_voice_tasks.start()
+ await db_init();print(f'[READY] {bot.user}')
+ try:synced=await bot.tree.sync();print(f'تم تسجيل {len(synced)} أمر سلاش')
+ except Exception as e:print(f'خطأ تسجيل السلاش: {e}')
+ if not reset_daily_tasks.is_running():reset_daily_tasks.start()
+ if not weekly_top.is_running():weekly_top.start()
+ if not auto_backup.is_running():auto_backup.start()
+ if not check_voice_tasks.is_running():check_voice_tasks.start()
 @bot.event
 async def on_member_join(m):
  try:
@@ -136,7 +140,7 @@ async def on_member_remove(m):
    e=discord.Embed(title="💔 عضو غادرنا",description=f'**{m.name}** طلع من السيرفر',color=0xe74c3c,timestamp=datetime.now(timezone.utc));e.set_thumbnail(url=m.avatar.url if m.avatar else m.default_avatar.url);e.add_field(name="عدد الأعضاء الآن",value=f'`{m.guild.member_count}`',inline=True)
    await ch.send(embed=e)
  except:pass
-@bot.event
+  @bot.event
 async def on_member_ban(g,u):
  try:await log_send(g,"🔨 تم تبنيد عضو",0x992d22,fields=[("العضو",f"{u.mention}\n`{u.name}`",True)],thumb=u.avatar.url if u.avatar else u.default_avatar.url)
  except:pass
@@ -209,13 +213,13 @@ async def لفل(i:discord.Interaction,العضو:discord.Member=None):
  await i.response.send_message(embed=e)
 @bot.tree.command(name="توب",description="يعرض أفضل 10 أعضاء")
 async def توب(i:discord.Interaction):
- async with await db()as c:top=await(await c.execute('SELECT user_id,xp,level FROM levels WHERE guild_id=? ORDER BY xp DESC LIMIT 10',(str(i.guild.id),))).fetchall()
+ async with await get_db()as c:top=await(await c.execute('SELECT user_id,xp,level FROM levels WHERE guild_id=? ORDER BY xp DESC LIMIT 10',(str(i.guild.id),))).fetchall()
  if not top:return await i.response.send_message(embed=discord.Embed(description="❌ مافي أحد عنده XP",color=0xe74c3c),ephemeral=True)
  e=discord.Embed(title=f"🏆 توب 10 في {i.guild.name}",color=0xf1c40f);e.set_thumbnail(url=i.guild.icon.url if i.guild.icon else None);medals=["🥇","🥈","🥉"];e.description="".join([f"{medals[j]if j<3 else f'**{j+1}.**'} <@{u}>\n└ لفل `{l}` • `{x:,}` XP\n\n"for j,(u,x,l)in enumerate(top)])
  await i.response.send_message(embed=e)
 @bot.tree.command(name="توب_اسبوع",description="يعرض توب الأسبوع")
 async def توب_اسبوع(i:discord.Interaction):
- async with await db()as c:top=await(await c.execute('SELECT user_id,weekly_xp,level FROM levels WHERE guild_id=? AND weekly_xp>0 ORDER BY weekly_xp DESC LIMIT 10',(str(i.guild.id),))).fetchall()
+ async with await get_db()as c:top=await(await c.execute('SELECT user_id,weekly_xp,level FROM levels WHERE guild_id=? AND weekly_xp>0 ORDER BY weekly_xp DESC LIMIT 10',(str(i.guild.id),))).fetchall()
  if not top:return await i.response.send_message(embed=discord.Embed(title="😴 لا يوجد متفاعلين",description="مافي أحد جمع XP هذا الأسبوع",color=0x95a5a6),ephemeral=True)
  e=discord.Embed(title="🏆 توب 10 لهذا الأسبوع",color=0xf1c40f);medals=["🥇","🥈","🥉"];e.description="".join([f"{medals[j]if j<3 else f'**{j+1}.**'} <@{u}>\n└ `{x:,}` XP • لفل `{l}`\n\n"for j,(u,x,l)in enumerate(top)])
  await i.response.send_message(embed=e)
@@ -305,13 +309,13 @@ async def استعادة(i:discord.Interaction,ملف:discord.Attachment):
 async def نسخة_خاص(i:discord.Interaction):await i.response.send_message("📤 جاري الإرسال...",ephemeral=True);await send_backup(i.user,is_dm=True)
 @bot.tree.command(name="مساعدة",description="يعرض كل أوامر البوت")
 async def مساعدة(i:discord.Interaction):
-    e=discord.Embed(title="📋 أوامر البوت",description="كل الأوامر الآن سلاش `/`",color=0x3498db,timestamp=datetime.now(timezone.utc))
-    e.add_field(name="🔹 عامة",value="`/هلا` `/بنق` `/لفل` `/توب` `/توب_اسبوع` `/مهام` `/تحذيراتي`",inline=False)
-    e.add_field(name="⭐ إدارة XP",value="`/عط` `/خصم`",inline=False)
-    e.add_field(name="🛡️ الإدارة",value="`/مسح` `/ميوت` `/فك` `/طرد` `/باند` `/تحذير` `/قفل` `/فتح` `/مسح_تحذيرات`",inline=False)
-    e.add_field(name="💾 النسخ الاحتياطي",value="`/نسخة` `/استعادة` `/نسخة_خاص`",inline=False)
-    e.add_field(name="⚙️ الحماية التلقائية",value="• XP ذكي حسب طول الرسالة\n• نظام مهام يومية + مكافآت\n• حذف روابط + ميوت 5د\n• منع @everyone + ميوت 10د\n• فلتر سب + 3 تحذيرات = ميوت ساعة\n• منع السبام والمنشن الجماعي\n• نسخة تلقائية كل 12 ساعة بالخاص\n• لوق تلقائي للباند والطرد",inline=False)
-    e.set_footer(text="بوت متكامل للحماية واللفل والمهام")
-    await i.response.send_message(embed=e)
+ e=discord.Embed(title="📋 أوامر البوت",description="كل الأوامر الآن سلاش `/`",color=0x3498db,timestamp=datetime.now(timezone.utc))
+ e.add_field(name="🔹 عامة",value="`/هلا` `/بنق` `/لفل` `/توب` `/توب_اسبوع` `/مهام` `/تحذيراتي`",inline=False)
+ e.add_field(name="⭐ إدارة XP",value="`/عط` `/خصم`",inline=False)
+ e.add_field(name="🛡️ الإدارة",value="`/مسح` `/ميوت` `/فك` `/طرد` `/باند` `/تحذير` `/قفل` `/فتح` `/مسح_تحذيرات`",inline=False)
+ e.add_field(name="💾 النسخ الاحتياطي",value="`/نسخة` `/استعادة` `/نسخة_خاص`",inline=False)
+ e.add_field(name="⚙️ الحماية التلقائية",value="• XP ذكي حسب طول الرسالة\n• نظام مهام يومية + مكافآت\n• حذف روابط + ميوت 5د\n• منع @everyone + ميوت 10د\n• فلتر سب + 3 تحذيرات = ميوت ساعة\n• منع السبام والمنشن الجماعي\n• نسخة تلقائية كل 12 ساعة بالخاص\n• لوق تلقائي للباند والطرد",inline=False)
+ e.set_footer(text="بوت متكامل للحماية واللفل والمهام")
+ await i.response.send_message(embed=e)
 
 bot.run(TOKEN)
