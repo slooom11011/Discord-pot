@@ -106,7 +106,7 @@ async def weekly_top():
   await ch.send(embed=e)
   await db.execute('UPDATE levels SET weekly_xp=0 WHERE guild_id=?',(str(g.id),))
   await db.commit()
-  @tasks.loop(hours=12)
+@tasks.loop(hours=12)
 async def auto_backup():
  if not C["owner_id"]or not os.path.exists(DB):return
  try:u=await bot.fetch_user(C["owner_id"]);e=discord.Embed(title="📦 نسخة احتياطية تلقائية",color=0x3498db);e.add_field(name="الحجم",value=f"`{os.path.getsize(DB)/1024:.1f} KB`",inline=True);await u.send(embed=e,file=discord.File(DB))
